@@ -40,14 +40,39 @@ This repository demonstrates:
 - 🚦 Blue/green model deployment strategies  
 - 🤖 Agent creation and management best practices
 
-## 🤖 Model Deployment & Assistant Creation
+## 🤖 Model Deployment & Agent Creation
 
-Deploy AI models and create assistants using the **Azure OpenAI Assistants API**.
+Deploy AI models and create agents using the **Azure AI Foundry Agent Service**.
 
 ### What's Deployed
 
 ✅ **Model Deployment** - Deploy any supported model (gpt-4o, gpt-4, gpt-35-turbo, etc.)  
-✅ **Azure OpenAI Assistant** - Stateful agent with conversation management  
+✅ **Weather Agent** - AI agent with custom function calling for weather queries  
+✅ **Standardized JSON Responses** - Structured output for weather-related questions  
+✅ **Function Tools** - Custom Python functions the agent can call  
+
+### Weather Agent Features
+
+The agent includes a **weather function tool** that:
+- Provides weather information for any location
+- Returns responses in **standardized JSON format**
+- Supports both Celsius and Fahrenheit units
+- Works with natural language weather queries
+
+Example response:
+```json
+{
+    "location": "Seattle, WA",
+    "temperature": 15,
+    "temperature_unit": "°C",
+    "condition": "Rainy",
+    "humidity_percent": 85,
+    "wind_speed_kmh": 12,
+    "timestamp": "2025-10-21T12:00:00Z"
+}
+```
+
+📖 **Full documentation**: See [`docs/WEATHER_AGENT.md`](docs/WEATHER_AGENT.md)  
 ✅ **Code Interpreter** - Run Python code for analysis and calculations  
 ✅ **File Search** - Search through uploaded documents  
 ✅ **Function Calling** - Connect to external tools and APIs  
