@@ -132,30 +132,53 @@ jobs:
       - name: Purge Soft-Deleted Resources
         continue-on-error: true
         run: |
-          echo "🗑️ Checking for soft-deleted Cognitive Services accounts..."
+          echo "🗑️ Checking for soft-deleted resources..."
           
-          # List and purge any soft-deleted accounts in the location
+          # Purge soft-deleted Cognitive Services accounts
+          echo "Checking Cognitive Services accounts..."
           DELETED_ACCOUNTS=$(az cognitiveservices account list-deleted \
             --subscription ${{ secrets.AZURE_SUBSCRIPTION_ID }} \
             --query "[?location=='${{ inputs.location }}'].name" -o tsv)
           
           if [ -n "$DELETED_ACCOUNTS" ]; then
-            echo "Found soft-deleted accounts to purge:"
+            echo "Found soft-deleted Cognitive Services accounts to purge:"
             echo "$DELETED_ACCOUNTS"
             
             for ACCOUNT_NAME in $DELETED_ACCOUNTS; do
-              echo "Purging: $ACCOUNT_NAME"
+              echo "Purging Cognitive Services account: $ACCOUNT_NAME"
               az cognitiveservices account purge \
                 --name "$ACCOUNT_NAME" \
                 --resource-group ${{ inputs.resource_group_name }} \
                 --location ${{ inputs.location }} || true
             done
-            
-            echo "✅ Purge complete. Waiting 10 seconds..."
-            sleep 10
           else
-            echo "No soft-deleted accounts found."
+            echo "No soft-deleted Cognitive Services accounts found."
           fi
+          
+          # Purge soft-deleted Key Vaults
+          echo ""
+          echo "Checking Key Vaults..."
+          DELETED_VAULTS=$(az keyvault list-deleted \
+            --subscription ${{ secrets.AZURE_SUBSCRIPTION_ID }} \
+            --query "[?properties.location=='${{ inputs.location }}'].name" -o tsv)
+          
+          if [ -n "$DELETED_VAULTS" ]; then
+            echo "Found soft-deleted Key Vaults to purge:"
+            echo "$DELETED_VAULTS"
+            
+            for VAULT_NAME in $DELETED_VAULTS; do
+              echo "Purging Key Vault: $VAULT_NAME"
+              az keyvault purge \
+                --name "$VAULT_NAME" \
+                --location ${{ inputs.location }} || true
+            done
+          else
+            echo "No soft-deleted Key Vaults found."
+          fi
+          
+          echo ""
+          echo "✅ Purge complete. Waiting 10 seconds for Azure to process..."
+          sleep 10
 
       - name: What-If Analysis
         continue-on-error: true
