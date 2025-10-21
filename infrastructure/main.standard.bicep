@@ -1,140 +1,182 @@
-// Azure AI Foundry Project with Standard Agent Setup
-// Includes dedicated Storage Account, Cosmos DB, and Azure AI Search for agent data isolation
+// Standard BICEP template for Azure AI Foundry with Agent (Production Configuration)
+// This template creates production-ready Azure AI Foundry Hub and Project with dedicated resources
+// Architecture: Hub (kind: 'hub') + Project (kind: 'Project') + AI Services + optional Cosmos DB + AI Search
 
-@description('Location for all resources')
+@description('Azure region for all resources')
 param location string = resourceGroup().location
 
-@description('Base name for resources (will have suffixes added)')
-param baseName string
+@description('Base name for all resources')
+@minLength(2)
+@maxLength(10)
+param baseName string = 'aif'
 
-@description('Enable capability hosts for agents')
-param enableAgents bool = true
+@description('Environment name (dev, test, prod)')
+@allowed([
+  'dev'
+  'test'
+  'prod'
+])
+param environment string = 'prod'
 
-@description('Model deployment configuration')
-param modelDeploymentName string = 'gpt-4o'
-param modelName string = 'gpt-4o'
-param modelVersion string = '2024-11-20'
-param modelFormat string = 'OpenAI'
-param deploymentSkuName string = 'Standard'
-param deploymentCapacity int = 10
+@description('Tags to apply to all resources')
+param tags object = {
+  Environment: environment
+  ManagedBy: 'Bicep'
+  Project: 'AzureAIFoundry'
+}
 
-// Generate unique names
-var uniqueSuffix = uniqueString(resourceGroup().id)
-var aiFoundryName = '${baseName}-aifoundry-${uniqueSuffix}'
-var projectName = '${baseName}-project'
-var storageAccountName = toLower(replace('${baseName}${uniqueSuffix}', '-', ''))
-var cosmosDbAccountName = '${baseName}-cosmos-${uniqueSuffix}'
-var searchServiceName = '${baseName}-search-${uniqueSuffix}'
+@description('Enable Cosmos DB for project storage')
+param enableCosmosDb bool = true
 
-// Storage Account for agent file storage
-resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {
-  name: length(storageAccountName) > 24 ? substring(storageAccountName, 0, 24) : storageAccountName
+@description('Enable AI Search for enhanced capabilities')
+param enableAISearch bool = true
+
+// Variables
+var uniqueSuffix = substring(uniqueString(resourceGroup().id), 0, 6)
+var aiHubName = '${baseName}-hub-${environment}-${uniqueSuffix}'
+var projectName = '${baseName}-project-${environment}-${uniqueSuffix}'
+var aiServicesName = '${baseName}-ais-${environment}-${uniqueSuffix}'
+var storageName = replace('${baseName}st${environment}${uniqueSuffix}', '-', '')
+var keyVaultName = '${baseName}-kv-${environment}-${uniqueSuffix}'
+var appInsightsName = '${baseName}-ai-${environment}-${uniqueSuffix}'
+var containerRegistryName = replace('${baseName}cr${environment}${uniqueSuffix}', '-', '')
+var cosmosDbAccountName = '${baseName}-cosmos-${environment}-${uniqueSuffix}'
+var searchServiceName = '${baseName}-search-${environment}-${uniqueSuffix}'
+
+// ============================================================================
+// STORAGE ACCOUNT (Premium with GRS)
+// ============================================================================
+
+resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
+  name: storageName
   location: location
+  tags: tags
   sku: {
-    name: 'Standard_LRS'
+    name: 'Standard_GRS' // Geo-redundant for production
   }
   kind: 'StorageV2'
   properties: {
     accessTier: 'Hot'
-    supportsHttpsTrafficOnly: true
-    minimumTlsVersion: 'TLS1_2'
     allowBlobPublicAccess: false
+    minimumTlsVersion: 'TLS1_2'
+    supportsHttpsTrafficOnly: true
+    encryption: {
+      services: {
+        blob: {
+          enabled: true
+        }
+        file: {
+          enabled: true
+        }
+      }
+      keySource: 'Microsoft.Storage'
+    }
+    networkAcls: {
+      defaultAction: 'Deny'
+      bypass: 'AzureServices'
+    }
   }
 }
 
-// Blob service and containers for agent data
-resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01' = {
-  name: 'default'
-  parent: storageAccount
+// ============================================================================
+// KEY VAULT (Premium)
+// ============================================================================
+
+resource keyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
+  name: keyVaultName
+  location: location
+  tags: tags
+  properties: {
+    sku: {
+      family: 'A'
+      name: 'premium' // Premium SKU for production
+    }
+    tenantId: subscription().tenantId
+    enableRbacAuthorization: true
+    enableSoftDelete: true
+    softDeleteRetentionInDays: 90
+    enablePurgeProtection: true // Required for production
+    enabledForDeployment: false
+    enabledForDiskEncryption: true
+    enabledForTemplateDeployment: false
+    publicNetworkAccess: 'Enabled'
+  }
 }
 
-resource filesContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
-  name: 'agent-files'
-  parent: blobService
+// ============================================================================
+// APPLICATION INSIGHTS
+// ============================================================================
+
+resource applicationInsights 'Microsoft.Insights/components@2020-02-02' = {
+  name: appInsightsName
+  location: location
+  tags: tags
+  kind: 'web'
+  properties: {
+    Application_Type: 'web'
+    DisableIpMasking: false
+    DisableLocalAuth: false
+    Flow_Type: 'Bluefield'
+    ForceCustomerStorageForProfiler: false
+    ImmediatePurgeDataOn30Days: false // Keep logs longer in production
+    IngestionMode: 'ApplicationInsights'
+    publicNetworkAccessForIngestion: 'Enabled'
+    publicNetworkAccessForQuery: 'Enabled'
+    Request_Source: 'rest'
+  }
 }
 
-resource systemDataContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
-  name: 'agent-system-data'
-  parent: blobService
+// ============================================================================
+// CONTAINER REGISTRY (Standard for production)
+// ============================================================================
+
+resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
+  name: containerRegistryName
+  location: location
+  tags: tags
+  sku: {
+    name: 'Standard' // Standard SKU for production
+  }
+  properties: {
+    adminUserEnabled: true
+    publicNetworkAccess: 'Enabled'
+  }
 }
 
-// Cosmos DB for thread/message storage
-resource cosmosDbAccount 'Microsoft.DocumentDB/databaseAccounts@2024-05-15' = {
+// ============================================================================
+// COSMOS DB (Optional)
+// ============================================================================
+
+resource cosmosDbAccount 'Microsoft.DocumentDB/databaseAccounts@2024-05-15' = if (enableCosmosDb) {
   name: cosmosDbAccountName
   location: location
+  tags: tags
   kind: 'GlobalDocumentDB'
   properties: {
-    databaseAccountOfferType: 'Standard'
     consistencyPolicy: {
       defaultConsistencyLevel: 'Session'
     }
+    databaseAccountOfferType: 'Standard'
+    enableAutomaticFailover: true
     locations: [
       {
         locationName: location
         failoverPriority: 0
+        isZoneRedundant: true
       }
     ]
-    enableAutomaticFailover: false
-    enableMultipleWriteLocations: false
+    publicNetworkAccess: 'Enabled'
   }
 }
 
-resource cosmosDatabase 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases@2024-05-15' = {
-  name: 'agent-database'
-  parent: cosmosDbAccount
-  properties: {
-    resource: {
-      id: 'agent-database'
-    }
-  }
-}
+// ============================================================================
+// AI SEARCH (Optional)
+// ============================================================================
 
-resource threadsContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-05-15' = {
-  name: 'threads'
-  parent: cosmosDatabase
-  properties: {
-    resource: {
-      id: 'threads'
-      partitionKey: {
-        paths: ['/id']
-        kind: 'Hash'
-      }
-    }
-  }
-}
-
-resource messagesContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-05-15' = {
-  name: 'messages'
-  parent: cosmosDatabase
-  properties: {
-    resource: {
-      id: 'messages'
-      partitionKey: {
-        paths: ['/threadId']
-        kind: 'Hash'
-      }
-    }
-  }
-}
-
-resource agentsContainer 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-05-15' = {
-  name: 'agents'
-  parent: cosmosDatabase
-  properties: {
-    resource: {
-      id: 'agents'
-      partitionKey: {
-        paths: ['/id']
-        kind: 'Hash'
-      }
-    }
-  }
-}
-
-// Azure AI Search for vector store
-resource searchService 'Microsoft.Search/searchServices@2024-06-01-preview' = {
+resource searchService 'Microsoft.Search/searchServices@2024-06-01-preview' = if (enableAISearch) {
   name: searchServiceName
   location: location
+  tags: tags
   sku: {
     name: 'standard'
   }
@@ -142,177 +184,129 @@ resource searchService 'Microsoft.Search/searchServices@2024-06-01-preview' = {
     replicaCount: 1
     partitionCount: 1
     hostingMode: 'default'
+    publicNetworkAccess: 'enabled'
   }
 }
 
-// Create the Azure AI Foundry resource
-resource aiFoundryResource 'Microsoft.CognitiveServices/accounts@2025-06-01' = {
-  name: aiFoundryName
+// ============================================================================
+// AI SERVICES (COGNITIVE SERVICES) - As dependency
+// ============================================================================
+
+resource aiServices 'Microsoft.CognitiveServices/accounts@2024-10-01' = {
+  name: aiServicesName
   location: location
+  tags: tags
+  sku: {
+    name: 'S0'
+  }
   kind: 'AIServices'
   identity: {
     type: 'SystemAssigned'
   }
-  sku: {
-    name: 'S0'
-  }
   properties: {
-    allowProjectManagement: true
-    customSubDomainName: aiFoundryName
-    disableLocalAuth: true
+    customSubDomainName: aiServicesName
     publicNetworkAccess: 'Enabled'
+    networkAcls: {
+      defaultAction: 'Deny'
+      ipRules: []
+      virtualNetworkRules: []
+    }
   }
 }
 
-// Create the Azure AI Foundry Project
-resource aiFoundryProject 'Microsoft.CognitiveServices/accounts/projects@2025-06-01' = {
-  name: projectName
-  parent: aiFoundryResource
+// ============================================================================
+// AI FOUNDRY HUB (Azure Machine Learning Workspace - kind: Hub)
+// ============================================================================
+
+resource aiHub 'Microsoft.MachineLearningServices/workspaces@2024-10-01-preview' = {
+  name: aiHubName
   location: location
-  properties: {
-    description: 'Azure AI Foundry project with standard agent setup'
-    displayName: projectName
+  tags: tags
+  kind: 'hub'
+  identity: {
+    type: 'SystemAssigned'
   }
-}
+  properties: {
+    friendlyName: aiHubName
+    description: 'Production Azure AI Foundry Hub with enhanced capabilities'
+    keyVault: keyVault.id
+    storageAccount: storageAccount.id
+    applicationInsights: applicationInsights.id
+    containerRegistry: containerRegistry.id
+    systemDatastoresAuthMode: 'identity'
+  }
 
-// Deploy the AI model
-resource modelDeployment 'Microsoft.CognitiveServices/accounts/deployments@2024-10-01' = {
-  name: modelDeploymentName
-  parent: aiFoundryResource
-  sku: {
-    name: deploymentSkuName
-    capacity: deploymentCapacity
+  // AI Services Connection
+  resource aiServicesConnection 'connections@2024-10-01-preview' = {
+    name: '${aiHubName}-connection-AIServices'
+    properties: {
+      category: 'AIServices'
+      target: aiServices.properties.endpoint
+      authType: 'AAD'
+      isSharedToAll: true
+      metadata: {
+        ApiType: 'Azure'
+        ResourceId: aiServices.id
+      }
+    }
   }
-  properties: {
-    model: {
-      format: modelFormat
-      name: modelName
-      version: modelVersion
+
+  // AI Search Connection (if enabled)
+  resource searchConnection 'connections@2024-10-01-preview' = if (enableAISearch) {
+    name: '${aiHubName}-connection-AISearch'
+    properties: {
+      category: 'CognitiveSearch'
+      target: enableAISearch ? 'https://${searchService.name}.search.windows.net' : ''
+      authType: 'AAD'
+      isSharedToAll: true
+      metadata: {
+        ApiType: 'Azure'
+        ResourceId: enableAISearch ? searchService.id : ''
+      }
     }
   }
 }
 
-// Create connections for the agent resources
-resource storageConnection 'Microsoft.CognitiveServices/accounts/projects/connections@2025-06-01' = {
-  name: 'agent-storage-connection'
-  parent: aiFoundryProject
+// ============================================================================
+// AI FOUNDRY PROJECT (Azure Machine Learning Workspace - kind: Project)
+// ============================================================================
+
+resource project 'Microsoft.MachineLearningServices/workspaces@2024-10-01-preview' = {
+  name: projectName
+  location: location
+  tags: tags
+  kind: 'Project'
+  identity: {
+    type: 'SystemAssigned'
+  }
   properties: {
-    category: 'AzureBlob'
-    target: storageAccount.properties.primaryEndpoints.blob
-    authType: 'ManagedIdentity'
-    isSharedToAll: false
-    metadata: {
-      resourceId: storageAccount.id
-      location: location
-    }
+    friendlyName: projectName
+    description: 'Production AI Foundry project with enhanced capabilities'
+    hubResourceId: aiHub.id
+    systemDatastoresAuthMode: 'identity'
   }
 }
 
-resource cosmosConnection 'Microsoft.CognitiveServices/accounts/projects/connections@2025-06-01' = {
-  name: 'agent-cosmos-connection'
-  parent: aiFoundryProject
-  properties: {
-    category: 'CosmosDb'
-    target: cosmosDbAccount.properties.documentEndpoint
-    authType: 'ManagedIdentity'
-    isSharedToAll: false
-    metadata: {
-      resourceId: cosmosDbAccount.id
-      databaseName: cosmosDatabase.name
-      location: location
-    }
-  }
-}
+// ============================================================================
+// OUTPUTS
+// ============================================================================
 
-resource searchConnection 'Microsoft.CognitiveServices/accounts/projects/connections@2025-06-01' = {
-  name: 'agent-search-connection'
-  parent: aiFoundryProject
-  properties: {
-    category: 'CognitiveSearch'
-    target: 'https://${searchService.name}.search.windows.net'
-    authType: 'ManagedIdentity'
-    isSharedToAll: false
-    metadata: {
-      resourceId: searchService.id
-      location: location
-    }
-  }
-}
-
-// Grant AI Foundry managed identity access to resources
-// Storage Blob Data Contributor role
-resource storageRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(storageAccount.id, aiFoundryResource.id, 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
-  scope: storageAccount
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
-    principalId: aiFoundryResource.identity.principalId
-    principalType: 'ServicePrincipal'
-  }
-}
-
-// Cosmos DB Built-in Data Contributor role
-resource cosmosRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(cosmosDbAccount.id, aiFoundryResource.id, '00000000-0000-0000-0000-000000000002')
-  scope: cosmosDbAccount
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '00000000-0000-0000-0000-000000000002')
-    principalId: aiFoundryResource.identity.principalId
-    principalType: 'ServicePrincipal'
-  }
-}
-
-// Search Index Data Contributor role
-resource searchRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(searchService.id, aiFoundryResource.id, '8ebe5a00-799e-43f5-93ac-243d3dce84a7')
-  scope: searchService
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '8ebe5a00-799e-43f5-93ac-243d3dce84a7')
-    principalId: aiFoundryResource.identity.principalId
-    principalType: 'ServicePrincipal'
-  }
-}
-
-// Create Capability Host at Account level
-resource accountCapabilityHost 'Microsoft.CognitiveServices/accounts/capabilityHosts@2025-06-01' = if (enableAgents) {
-  name: 'agents-capability-host'
-  parent: aiFoundryResource
-  properties: {
-    capabilityHostKind: 'Agents'
-  }
-  dependsOn: [
-    aiFoundryProject
-  ]
-}
-
-// Create Capability Host at Project level with BYO resources (Standard Setup)
-resource projectCapabilityHost 'Microsoft.CognitiveServices/accounts/projects/capabilityHosts@2025-06-01' = if (enableAgents) {
-  name: 'agents-project-capability-host'
-  parent: aiFoundryProject
-  properties: {
-    capabilityHostKind: 'Agents'
-    // Standard setup: specify your own resources for agent data
-    threadStorageConnections: [cosmosConnection.name]
-    vectorStoreConnections: [searchConnection.name]
-    storageConnections: [storageConnection.name]
-  }
-  dependsOn: [
-    accountCapabilityHost
-    storageRoleAssignment
-    cosmosRoleAssignment
-    searchRoleAssignment
-  ]
-}
-
-// Outputs
-output aiFoundryResourceId string = aiFoundryResource.id
-output aiFoundryResourceName string = aiFoundryResource.name
-output aiFoundryEndpoint string = aiFoundryResource.properties.endpoint
-output aiFoundryApiEndpoint string = aiFoundryResource.properties.endpoints['AI Foundry API']
-output projectId string = aiFoundryProject.id
-output projectName string = aiFoundryProject.name
-output modelDeploymentName string = modelDeployment.name
+output aiHubName string = aiHub.name
+output aiHubId string = aiHub.id
+output projectName string = project.name
+output projectId string = project.id
+output aiServicesName string = aiServices.name
+output aiServicesEndpoint string = aiServices.properties.endpoint
+output aiServicesId string = aiServices.id
 output storageAccountName string = storageAccount.name
-output cosmosDbAccountName string = cosmosDbAccount.name
-output searchServiceName string = searchService.name
+output storageAccountId string = storageAccount.id
+output keyVaultName string = keyVault.name
+output keyVaultId string = keyVault.id
+output applicationInsightsName string = applicationInsights.name
+output containerRegistryName string = containerRegistry.name
+output cosmosDbAccountName string = enableCosmosDb ? cosmosDbAccount.name : ''
+output cosmosDbAccountId string = enableCosmosDb ? cosmosDbAccount.id : ''
+output searchServiceName string = enableAISearch ? searchService.name : ''
+output searchServiceId string = enableAISearch ? searchService.id : ''
+output resourceGroupName string = resourceGroup().name
 output location string = location
