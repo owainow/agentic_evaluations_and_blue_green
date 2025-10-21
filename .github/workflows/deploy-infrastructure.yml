@@ -270,13 +270,20 @@ jobs:
             --resource-group ${{ inputs.resource_group_name }} \
             --output table
           
-          # Check AI Foundry resource
+          # Check AI Foundry Hub (Machine Learning Workspace)
           echo ""
-          echo "Checking AI Foundry resource..."
-          az cognitiveservices account show \
-            --name ${{ steps.deploy.outputs.ai_foundry_name }} \
-            --resource-group ${{ inputs.resource_group_name }} \
-            --query "{Name:name, Kind:kind, SKU:sku.name, Endpoint:properties.endpoint, ProvisioningState:properties.provisioningState}" \
+          echo "Checking AI Foundry Hub..."
+          az resource show \
+            --ids "/subscriptions/${{ secrets.AZURE_SUBSCRIPTION_ID }}/resourceGroups/${{ inputs.resource_group_name }}/providers/Microsoft.MachineLearningServices/workspaces/${{ steps.deploy.outputs.ai_foundry_name }}" \
+            --query "{Name:name, Kind:kind, Location:location, Type:type, ProvisioningState:properties.provisioningState}" \
+            --output table
+          
+          # Check AI Foundry Project (Machine Learning Workspace)
+          echo ""
+          echo "Checking AI Foundry Project..."
+          az resource show \
+            --ids "/subscriptions/${{ secrets.AZURE_SUBSCRIPTION_ID }}/resourceGroups/${{ inputs.resource_group_name }}/providers/Microsoft.MachineLearningServices/workspaces/${{ steps.deploy.outputs.project_name }}" \
+            --query "{Name:name, Kind:kind, Location:location, Type:type, ProvisioningState:properties.provisioningState}" \
             --output table
 
   post-deployment:
