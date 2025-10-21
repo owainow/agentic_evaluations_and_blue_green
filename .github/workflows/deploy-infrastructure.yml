@@ -9,17 +9,9 @@ on:
         type: choice
         options:
           - dev
-          - staging
+          - test
           - prod
         default: 'dev'
-      deployment_type:
-        description: 'Deployment type'
-        required: true
-        type: choice
-        options:
-          - basic
-          - standard
-        default: 'basic'
       resource_group_name:
         description: 'Resource group name'
         required: true
@@ -41,30 +33,11 @@ on:
           - uksouth
           - australiaeast
         default: 'eastus'
-      ai_foundry_name:
-        description: 'AI Foundry resource name (leave empty for auto-generated)'
+      base_name:
+        description: 'Base name for resources (2-10 chars, leave empty for "aif")'
         required: false
         type: string
-      ai_project_name:
-        description: 'Project name'
-        required: false
-        type: string
-        default: 'agent-project'
-      model_deployment_name:
-        description: 'Model deployment name'
-        required: false
-        type: string
-        default: 'gpt-4o'
-      model_name:
-        description: 'Model name'
-        required: false
-        type: choice
-        options:
-          - gpt-4o
-          - gpt-4o-mini
-          - gpt-4
-          - gpt-35-turbo
-        default: 'gpt-4o'
+        default: 'aif'
 
 permissions:
   id-token: write
@@ -88,17 +61,10 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Validate Basic BICEP template
-        if: inputs.deployment_type == 'basic'
+      - name: Validate BICEP template
         run: |
           az bicep build --file infrastructure/main.bicep
-          echo "✅ Basic BICEP template is valid"
-
-      - name: Validate Standard BICEP template
-        if: inputs.deployment_type == 'standard'
-        run: |
-          az bicep build --file infrastructure/main.standard.bicep
-          echo "✅ Standard BICEP template is valid"
+          echo "✅ BICEP template is valid"
 
   deploy:
     name: Deploy to Azure
@@ -183,25 +149,14 @@ jobs:
       - name: What-If Analysis
         continue-on-error: true
         run: |
-          TEMPLATE_FILE="infrastructure/main.bicep"
-          if [ "${{ inputs.deployment_type }}" == "standard" ]; then
-            TEMPLATE_FILE="infrastructure/main.standard.bicep"
-          fi
-          
-          # Generate base name from user input or default
-          BASE_NAME="${{ inputs.ai_foundry_name }}"
-          if [ -z "$BASE_NAME" ]; then
-            BASE_NAME="aif"
-          fi
-          
           echo "🔍 Running What-If analysis..."
           echo "This preview shows what resources will be created/modified."
           echo ""
           
           az deployment group what-if \
             --resource-group ${{ inputs.resource_group_name }} \
-            --template-file $TEMPLATE_FILE \
-            --parameters baseName="$BASE_NAME" \
+            --template-file infrastructure/main.bicep \
+            --parameters baseName="${{ inputs.base_name }}" \
                         environment=${{ inputs.environment }} \
                         location=${{ inputs.location }} \
             --result-format FullResourcePayloads
@@ -209,32 +164,20 @@ jobs:
       - name: Deploy Infrastructure
         id: deploy
         run: |
-          TEMPLATE_FILE="infrastructure/main.bicep"
-          if [ "${{ inputs.deployment_type }}" == "standard" ]; then
-            TEMPLATE_FILE="infrastructure/main.standard.bicep"
-          fi
-          
           DEPLOYMENT_NAME="aifoundry-$(date +%Y%m%d-%H%M%S)"
-          
-          # Generate base name from user input or default
-          BASE_NAME="${{ inputs.ai_foundry_name }}"
-          if [ -z "$BASE_NAME" ]; then
-            BASE_NAME="aif"
-          fi
           
           echo "🚀 Deploying Azure AI Foundry infrastructure..."
           echo "   Environment: ${{ inputs.environment }}"
-          echo "   Type: ${{ inputs.deployment_type }}"
           echo "   Resource Group: ${{ inputs.resource_group_name }}"
           echo "   Location: ${{ inputs.location }}"
-          echo "   Base Name: $BASE_NAME"
+          echo "   Base Name: ${{ inputs.base_name }}"
           echo ""
           
           az deployment group create \
             --name $DEPLOYMENT_NAME \
             --resource-group ${{ inputs.resource_group_name }} \
-            --template-file $TEMPLATE_FILE \
-            --parameters baseName="$BASE_NAME" \
+            --template-file infrastructure/main.bicep \
+            --parameters baseName="${{ inputs.base_name }}" \
                         environment=${{ inputs.environment }} \
                         location=${{ inputs.location }}
           
@@ -251,14 +194,14 @@ jobs:
           
           echo "$OUTPUTS" | jq .
           
-          # Set outputs for next jobs (updated to match new template outputs)
-          AI_HUB_NAME=$(echo $OUTPUTS | jq -r '.aiHubName.value')
+          # Set outputs for next jobs (updated to match new Foundry template outputs)
+          AI_FOUNDRY_NAME=$(echo $OUTPUTS | jq -r '.aiFoundryName.value')
           PROJECT_NAME=$(echo $OUTPUTS | jq -r '.projectName.value')
-          AI_SERVICES_ENDPOINT=$(echo $OUTPUTS | jq -r '.aiServicesEndpoint.value')
+          PROJECT_ENDPOINT=$(echo $OUTPUTS | jq -r '.projectEndpoint.value')
           
-          echo "ai_foundry_name=$AI_HUB_NAME" >> $GITHUB_OUTPUT
+          echo "ai_foundry_name=$AI_FOUNDRY_NAME" >> $GITHUB_OUTPUT
           echo "project_name=$PROJECT_NAME" >> $GITHUB_OUTPUT
-          echo "endpoint=$AI_SERVICES_ENDPOINT" >> $GITHUB_OUTPUT
+          echo "endpoint=$PROJECT_ENDPOINT" >> $GITHUB_OUTPUT
 
       - name: Verify Deployment
         run: |
@@ -270,21 +213,18 @@ jobs:
             --resource-group ${{ inputs.resource_group_name }} \
             --output table
           
-          # Check AI Foundry Hub (Machine Learning Workspace)
+          # Check AI Foundry Resource (Cognitive Services Account)
           echo ""
-          echo "Checking AI Foundry Hub..."
-          az resource show \
-            --ids "/subscriptions/${{ secrets.AZURE_SUBSCRIPTION_ID }}/resourceGroups/${{ inputs.resource_group_name }}/providers/Microsoft.MachineLearningServices/workspaces/${{ steps.deploy.outputs.ai_foundry_name }}" \
-            --query "{Name:name, Kind:kind, Location:location, Type:type, ProvisioningState:properties.provisioningState}" \
+          echo "Checking AI Foundry Resource..."
+          az cognitiveservices account show \
+            --name ${{ steps.deploy.outputs.ai_foundry_name }} \
+            --resource-group ${{ inputs.resource_group_name }} \
+            --query "{Name:name, Kind:kind, Location:location, Endpoint:properties.endpoint, ProvisioningState:properties.provisioningState}" \
             --output table
           
-          # Check AI Foundry Project (Machine Learning Workspace)
           echo ""
-          echo "Checking AI Foundry Project..."
-          az resource show \
-            --ids "/subscriptions/${{ secrets.AZURE_SUBSCRIPTION_ID }}/resourceGroups/${{ inputs.resource_group_name }}/providers/Microsoft.MachineLearningServices/workspaces/${{ steps.deploy.outputs.project_name }}" \
-            --query "{Name:name, Kind:kind, Location:location, Type:type, ProvisioningState:properties.provisioningState}" \
-            --output table
+          echo "✅ Verification complete!"
+          echo "🔗 Project Endpoint: ${{ steps.deploy.outputs.endpoint }}"
 
   post-deployment:
     name: Post-Deployment Steps
@@ -321,12 +261,12 @@ jobs:
           echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
           echo "| Environment | \`${{ inputs.environment }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| Deployment Type | \`${{ inputs.deployment_type }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| Resource Group | \`${{ needs.deploy.outputs.resource_group }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| Location | \`${{ inputs.location }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Base Name | \`${{ inputs.base_name }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| AI Foundry Name | \`${{ needs.deploy.outputs.ai_foundry_name }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| Project Name | \`${{ needs.deploy.outputs.project_name }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| Model | \`${{ inputs.model_name }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Project Endpoint | \`${{ needs.deploy.outputs.endpoint }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "## 🔗 Quick Links" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -337,7 +277,8 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "1. Visit [Azure AI Foundry](https://ai.azure.com)" >> $GITHUB_STEP_SUMMARY
           echo "2. Select project: **${{ needs.deploy.outputs.project_name }}**" >> $GITHUB_STEP_SUMMARY
-          echo "3. Start building agents!" >> $GITHUB_STEP_SUMMARY
+          echo "3. Deploy a model (e.g., gpt-4o)" >> $GITHUB_STEP_SUMMARY
+          echo "4. Start building agents!" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "## 🤖 Create Your First Agent" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -352,7 +293,7 @@ jobs:
           echo '' >> $GITHUB_STEP_SUMMARY
           echo 'with client:' >> $GITHUB_STEP_SUMMARY
           echo '    agent = client.agents.create_agent(' >> $GITHUB_STEP_SUMMARY
-          echo "        model=\"${{ inputs.model_deployment_name }}\"," >> $GITHUB_STEP_SUMMARY
+          echo '        model="gpt-4o",  # Your deployed model name' >> $GITHUB_STEP_SUMMARY
           echo '        name="my-assistant",' >> $GITHUB_STEP_SUMMARY
           echo '        instructions="You are a helpful AI assistant."' >> $GITHUB_STEP_SUMMARY
           echo '    )' >> $GITHUB_STEP_SUMMARY
