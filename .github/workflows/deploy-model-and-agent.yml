@@ -227,8 +227,9 @@ jobs:
           PROJECT_NAME=$(echo "$PROJECT_DATA" | jq -r '.name')
           
           # Construct the Agent Service endpoint
-          # Format: https://{workspace-guid}.services.ai.azure.com/api/projects/{project-name}
-          PROJECT_ENDPOINT="https://${WORKSPACE_GUID}.services.ai.azure.com/api/projects/${PROJECT_NAME}"
+          # Format: https://{hub-name}.services.ai.azure.com/api/projects/{project-name}
+          # The AIFoundryResourceName in the endpoint is the Hub name, not the workspace GUID
+          PROJECT_ENDPOINT="https://${HUB_NAME}.services.ai.azure.com/api/projects/${PROJECT_NAME}"
           
           echo "project_name=${PROJECT_NAME}" >> $GITHUB_OUTPUT
           echo "project_endpoint=${PROJECT_ENDPOINT}" >> $GITHUB_OUTPUT
