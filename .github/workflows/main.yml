@@ -30,4 +30,4 @@ jobs:
           azure-ai-project-endpoint: ${{ vars.FOUNDRY_ENDPOINT }}
           deployment-name: ${{ vars.MODEL_DEPLOYMENT }}
           agent-ids: ${{ vars.AGENT_ID_LIST }} }}
-          data-path: ${{ github.workspace }}/evaluation_data/${{ vars.DATA_FILE }}
+          data-path: ${{ github.workspace }}/evaluations/${{ vars.DATA_FILE }}
