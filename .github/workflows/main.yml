@@ -20,14 +20,14 @@ jobs:
       - name: Azure login using Federated Credentials
         uses: azure/login@v2
         with:
-          client-id: ${{ vars.AZURE_CLIENT_ID }}
-          tenant-id: ${{ vars.AZURE_TENANT_ID }}
-          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Run Evaluation
         uses: microsoft/ai-agent-evals@v2-beta
         with:
-          azure-ai-project-endpoint: ${{ vars.FOUNDRY_ENDPOINT }}
-          deployment-name: ${{ vars.MODEL_DEPLOYMENT }}
-          agent-ids: ${{ vars.AGENT_ID_LIST }} }}
-          data-path: ${{ github.workspace }}/evaluations/${{ vars.DATA_FILE }}
+          azure-ai-project-endpoint: ${{ secrets.FOUNDRY_ENDPOINT }}
+          deployment-name: ${{ secrets.MODEL_DEPLOYMENT }}
+          agent-ids: ${{ secrets.AGENT_ID_LIST }} }}
+          data-path: ${{ github.workspace }}/evaluations/${{ secrets.DATA_FILE }}
