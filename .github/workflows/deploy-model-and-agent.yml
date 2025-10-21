@@ -178,16 +178,17 @@ jobs:
           # Query for AI Foundry (new architecture using CognitiveServices)
           echo "Searching for AI Foundry in resource group: ${{ env.RESOURCE_GROUP }}"
           
-          # Get the AI Foundry resource (kind=AIServices with allowProjectManagement=true)
+          # Get the AI Foundry resource (kind=AIServices)
+          # First, get all AIServices accounts
           AI_FOUNDRY_DATA=$(az cognitiveservices account list \
             --resource-group ${{ env.RESOURCE_GROUP }} \
-            --query "[?kind=='AIServices' && properties.allowProjectManagement==\`true\`] | [0]" \
+            --query "[?kind=='AIServices'] | [0]" \
             -o json)
           
           if [ "$AI_FOUNDRY_DATA" == "null" ] || [ -z "$AI_FOUNDRY_DATA" ]; then
             echo "Error: No AI Foundry resource found in resource group ${{ env.RESOURCE_GROUP }}"
             echo "Available AI Services accounts:"
-            az cognitiveservices account list --resource-group ${{ env.RESOURCE_GROUP }} --query "[].{Name:name, Kind:kind, AllowProjectManagement:properties.allowProjectManagement}" -o table
+            az cognitiveservices account list --resource-group ${{ env.RESOURCE_GROUP }} --query "[].{Name:name, Kind:kind}" -o table
             exit 1
           fi
           
