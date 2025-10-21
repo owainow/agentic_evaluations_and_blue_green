@@ -341,7 +341,7 @@ resource hubAIDeveloperRoleAssignment 'Microsoft.Authorization/roleAssignments@2
 // Assign role to AI Search if enabled
 resource projectSearchContributorRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (enableAISearch) {
   name: guid(searchService.id, project.id, 'Search-Contributor')
-  scope: enableAISearch ? searchService : aiServices // Conditional scope
+  scope: searchService
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7ca78c08-252a-4471-8644-bb5ff32d4ba0') // Search Service Contributor
     principalId: project.identity.principalId
@@ -353,7 +353,7 @@ resource projectSearchContributorRoleAssignment 'Microsoft.Authorization/roleAss
 // Assign role to Cosmos DB if enabled
 resource projectCosmosDbContributorRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (enableCosmosDb) {
   name: guid(cosmosDbAccount.id, project.id, 'Cosmos-Contributor')
-  scope: enableCosmosDb ? cosmosDbAccount : aiServices // Conditional scope
+  scope: cosmosDbAccount
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '00000000-0000-0000-0000-000000000002') // Cosmos DB Built-in Data Contributor
     principalId: project.identity.principalId
@@ -368,8 +368,10 @@ resource projectCosmosDbContributorRoleAssignment 'Microsoft.Authorization/roleA
 
 output aiHubName string = aiHub.name
 output aiHubId string = aiHub.id
+output aiHubPrincipalId string = aiHub.identity.principalId
 output projectName string = project.name
 output projectId string = project.id
+output projectPrincipalId string = project.identity.principalId
 output aiServicesName string = aiServices.name
 output aiServicesEndpoint string = aiServices.properties.endpoint
 output aiServicesId string = aiServices.id
@@ -385,3 +387,10 @@ output searchServiceName string = enableAISearch ? searchService.name : ''
 output searchServiceId string = enableAISearch ? searchService.id : ''
 output resourceGroupName string = resourceGroup().name
 output location string = location
+output roleAssignments object = {
+  projectAIDeveloper: projectAIDeveloperRoleAssignment.id
+  projectOpenAIUser: projectOpenAIUserRoleAssignment.id
+  hubAIDeveloper: hubAIDeveloperRoleAssignment.id
+  projectSearchContributor: enableAISearch ? projectSearchContributorRoleAssignment.id : ''
+  projectCosmosDbContributor: enableCosmosDb ? projectCosmosDbContributorRoleAssignment.id : ''
+}
