@@ -68,7 +68,7 @@ on:
         description: 'Instructions for the agent'
         required: true
         type: string
-        default: 'You are a helpful AI assistant that provides accurate and concise answers.'
+        default: 'You are an agent that provides responses in JSON only. You are to follow a standard JSON request format with a "response" field containing the answer.'
       
       run_evaluation:
         description: 'Run evaluation after agent creation'
