@@ -129,6 +129,34 @@ jobs:
             --location ${{ inputs.location }} \
             --tags Environment=${{ inputs.environment }} DeployedBy=GitHubActions
 
+      - name: Purge Soft-Deleted Resources
+        continue-on-error: true
+        run: |
+          echo "🗑️ Checking for soft-deleted Cognitive Services accounts..."
+          
+          # List and purge any soft-deleted accounts in the location
+          DELETED_ACCOUNTS=$(az cognitiveservices account list-deleted \
+            --subscription ${{ secrets.AZURE_SUBSCRIPTION_ID }} \
+            --query "[?location=='${{ inputs.location }}'].name" -o tsv)
+          
+          if [ -n "$DELETED_ACCOUNTS" ]; then
+            echo "Found soft-deleted accounts to purge:"
+            echo "$DELETED_ACCOUNTS"
+            
+            for ACCOUNT_NAME in $DELETED_ACCOUNTS; do
+              echo "Purging: $ACCOUNT_NAME"
+              az cognitiveservices account purge \
+                --name "$ACCOUNT_NAME" \
+                --resource-group ${{ inputs.resource_group_name }} \
+                --location ${{ inputs.location }} || true
+            done
+            
+            echo "✅ Purge complete. Waiting 10 seconds..."
+            sleep 10
+          else
+            echo "No soft-deleted accounts found."
+          fi
+
       - name: What-If Analysis
         continue-on-error: true
         run: |
