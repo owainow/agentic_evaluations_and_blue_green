@@ -291,6 +291,78 @@ resource project 'Microsoft.MachineLearningServices/workspaces@2024-10-01-previe
 }
 
 // ============================================================================
+// ROLE ASSIGNMENTS
+// ============================================================================
+
+// Azure AI Developer role definition ID
+// Reference: https://learn.microsoft.com/en-us/azure/role-based-access-control/built-in-roles#azure-ai-developer
+var azureAIDeveloperRoleId = '64702f94-c441-49e6-a78b-ef80e0188fee'
+
+// Assign Azure AI Developer role to Project's managed identity on AI Services
+resource projectAIDeveloperRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(aiServices.id, project.id, azureAIDeveloperRoleId)
+  scope: aiServices
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', azureAIDeveloperRoleId)
+    principalId: project.identity.principalId
+    principalType: 'ServicePrincipal'
+    description: 'Grants Azure AI Developer permissions to the AI Foundry Project managed identity on AI Services'
+  }
+}
+
+// Cognitive Services OpenAI User role definition ID
+// This allows the project to use OpenAI API including Assistants
+var cognitiveServicesOpenAIUserRoleId = '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd'
+
+// Assign Cognitive Services OpenAI User role to Project's managed identity
+resource projectOpenAIUserRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(aiServices.id, project.id, cognitiveServicesOpenAIUserRoleId)
+  scope: aiServices
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', cognitiveServicesOpenAIUserRoleId)
+    principalId: project.identity.principalId
+    principalType: 'ServicePrincipal'
+    description: 'Grants OpenAI API access including Assistants to the AI Foundry Project managed identity'
+  }
+}
+
+// Assign Azure AI Developer role to Hub's managed identity on AI Services
+resource hubAIDeveloperRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(aiServices.id, aiHub.id, azureAIDeveloperRoleId)
+  scope: aiServices
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', azureAIDeveloperRoleId)
+    principalId: aiHub.identity.principalId
+    principalType: 'ServicePrincipal'
+    description: 'Grants Azure AI Developer permissions to the AI Foundry Hub managed identity on AI Services'
+  }
+}
+
+// Assign role to AI Search if enabled
+resource projectSearchContributorRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (enableAISearch) {
+  name: guid(searchService.id, project.id, 'Search-Contributor')
+  scope: enableAISearch ? searchService : aiServices // Conditional scope
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7ca78c08-252a-4471-8644-bb5ff32d4ba0') // Search Service Contributor
+    principalId: project.identity.principalId
+    principalType: 'ServicePrincipal'
+    description: 'Grants Search Service Contributor permissions to the AI Foundry Project on AI Search'
+  }
+}
+
+// Assign role to Cosmos DB if enabled
+resource projectCosmosDbContributorRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (enableCosmosDb) {
+  name: guid(cosmosDbAccount.id, project.id, 'Cosmos-Contributor')
+  scope: enableCosmosDb ? cosmosDbAccount : aiServices // Conditional scope
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '00000000-0000-0000-0000-000000000002') // Cosmos DB Built-in Data Contributor
+    principalId: project.identity.principalId
+    principalType: 'ServicePrincipal'
+    description: 'Grants Cosmos DB data access to the AI Foundry Project'
+  }
+}
+
+// ============================================================================
 // OUTPUTS
 // ============================================================================
 

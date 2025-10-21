@@ -1,5 +1,10 @@
 name: Deploy Model and Create Agent
 
+# Prerequisites:
+# 1. Service principal with Contributor role (for resource deployment)
+# 2. Service principal with "Cognitive Services OpenAI User" role (for assistant creation)
+# See docs/GITHUB_ACTIONS_SETUP.md for complete setup instructions
+
 on:
   workflow_dispatch:
     inputs:
@@ -104,20 +109,14 @@ jobs:
           echo "deployment_name=${DEPLOYMENT_NAME}" >> $GITHUB_OUTPUT
           echo "Generated deployment name: ${DEPLOYMENT_NAME}"
       
-      - name: Get AI Services Details
+      - name: Get AI Services name
         id: ai_services
         shell: bash
         run: |
-          # Get the AI Services account name and resource ID
+          # Get the AI Services account name from the existing deployment
           AI_SERVICES_NAME=$(az cognitiveservices account list \
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --query "[?kind=='AIServices'].name | [0]" \
-            -o tsv)
-          
-          AI_SERVICES_ID=$(az cognitiveservices account show \
-            --resource-group ${{ env.RESOURCE_GROUP }} \
-            --name ${AI_SERVICES_NAME} \
-            --query id \
             -o tsv)
           
           if [ -z "$AI_SERVICES_NAME" ]; then
@@ -126,27 +125,7 @@ jobs:
           fi
           
           echo "ai_services_name=${AI_SERVICES_NAME}" >> $GITHUB_OUTPUT
-          echo "ai_services_id=${AI_SERVICES_ID}" >> $GITHUB_OUTPUT
           echo "Found AI Services account: ${AI_SERVICES_NAME}"
-          echo "Resource ID: ${AI_SERVICES_ID}"
-      
-      - name: Grant Assistant Permissions
-        shell: bash
-        run: |
-          echo "Granting Cognitive Services OpenAI User role to service principal..."
-          
-          # Get the current service principal object ID
-          SP_OBJECT_ID=$(az ad sp show --id ${{ secrets.AZURE_CLIENT_ID }} --query id -o tsv)
-          
-          # Assign Cognitive Services OpenAI User role
-          az role assignment create \
-            --assignee-object-id ${SP_OBJECT_ID} \
-            --assignee-principal-type ServicePrincipal \
-            --role "Cognitive Services OpenAI User" \
-            --scope ${{ steps.ai_services.outputs.ai_services_id }}
-          
-          echo "✅ Permissions granted. Waiting 30 seconds for propagation..."
-          sleep 30
       
       - name: Deploy Model
         id: deploy_model
@@ -235,8 +214,18 @@ jobs:
           if [ "${{ steps.create_assistant.outcome }}" == "failure" ]; then
             echo "⚠️ Assistant creation failed."
             echo ""
-            echo "The model deployment was successful. You can still use the deployed model directly."
-            echo "Check the logs above for specific error details."
+            echo "Common causes:"
+            echo "1. Missing 'Cognitive Services OpenAI User' role on the service principal"
+            echo "2. Role assignment not yet propagated (can take 5-10 minutes)"
+            echo ""
+            echo "To fix:"
+            echo "1. Go to Azure Portal → AI Services resource → Access control (IAM)"
+            echo "2. Add role assignment: 'Cognitive Services OpenAI User'"
+            echo "3. Assign to: github-actions-aifoundry (service principal)"
+            echo ""
+            echo "For detailed instructions, see: docs/GITHUB_ACTIONS_SETUP.md"
+            echo ""
+            echo "✅ The model deployment was successful and can be used directly."
           else
             echo "✅ Assistant created successfully!"
             echo "Assistant ID: ${{ steps.create_assistant.outputs.assistant_id }}"
