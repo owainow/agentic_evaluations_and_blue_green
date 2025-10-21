@@ -170,17 +170,6 @@ echo "✅ GitHub secrets configured!"
    - `AZURE_TENANT_ID`: Your Azure tenant ID
    - `AZURE_SUBSCRIPTION_ID`: Your Azure subscription ID
 
-### 4. Configure Environments (Optional but Recommended)
-
-Create GitHub environments for approval gates:
-
-1. **Settings** → **Environments**
-2. Create environments: `dev`, `staging`, `prod`
-3. For `prod`, add:
-   - **Required reviewers**: Add team members
-   - **Wait timer**: 5 minutes
-   - **Deployment branches**: Only `main`
-
 ## 📋 Workflow Parameters
 
 ### Deploy Infrastructure
@@ -208,8 +197,9 @@ Create GitHub environments for approval gates:
 
 ### Development Workflow
 
-1. **Start with Dev**
-   - Deploy to `dev` environment first
+1. **Start with Development Resources**
+   - Use naming conventions to differentiate environments (e.g., `rg-aifoundry-dev`, `rg-aifoundry-prod`)
+   - Deploy to dev resource group first
    - Test agent creation and functionality
    - Validate deployment outputs
 
@@ -219,29 +209,31 @@ Create GitHub environments for approval gates:
    - Validate with standard setup
 
 3. **Deploy to Production**
-   - Require manual approval
    - Use standard deployment type
    - Enable all monitoring
+   - Use appropriate model capacity
 
 ### Security
 
 ✅ **Use OIDC Federation** (passwordless authentication)  
-✅ **Protect production environment** with required reviewers  
-✅ **Tag all resources** for cost tracking  
+✅ **Tag all resources** for cost tracking and environment identification  
 ✅ **Use managed identities** (templates already do this)  
 ✅ **Disable local auth** (templates already do this)  
+✅ **Single federated credential** for all workflows (avoids environment conflicts)
 
 ### Cost Management
 
-💰 **Dev Environment**:
+💰 **Development**:
 - Use basic deployment type
 - Lower model capacity (10K TPM)
-- Delete when not in use
+- Delete resources when not in use
+- Tag with `Environment=dev`
 
-💰 **Production Environment**:
+💰 **Production**:
 - Use standard deployment type
 - Appropriate model capacity
 - Enable monitoring and alerts
+- Tag with `Environment=prod`
 
 ## 📊 Workflow Outputs
 
