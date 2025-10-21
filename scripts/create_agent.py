@@ -109,8 +109,8 @@ def main():
     output_file = os.environ.get('GITHUB_OUTPUT')
     if output_file:
         with open(output_file, 'a') as f:
-            f.write(f"agent_id={agent_info['id']}\n")
-            f.write(f"agent_name={agent_info['name']}\n")
+            f.write(f"agentId={agent_info['id']}\n")
+            f.write(f"agentName={agent_info['name']}\n")
     
     # Also output as JSON for logging
     print("\nAgent Details (JSON):")
