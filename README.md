@@ -113,4 +113,87 @@ Example response:
 - **Cost Optimization**: Compare model performance vs cost
 - **Version Testing**: Validate new model versions against evaluations
 
-📖 **Full Guide**: See [`docs/MODEL_DEPLOYMENT_GUIDE.md`](docs/MODEL_DEPLOYMENT_GUIDE.md) 
+📖 **Full Guide**: See [`docs/MODEL_DEPLOYMENT_GUIDE.md`](docs/MODEL_DEPLOYMENT_GUIDE.md)
+
+## 🧪 Dual Evaluation System
+
+The repository includes **two parallel evaluation flows** that run simultaneously when you deploy an agent:
+
+### 1. AI Foundry Evaluation (AI-Powered)
+Uses **microsoft/ai-agent-evals@v2-beta** action with multiple AI evaluators:
+- ✅ **RelevanceEvaluator** - Are responses relevant to the query?
+- ✅ **CoherenceEvaluator** - Are responses well-structured and logical?
+- ✅ **GroundednessEvaluator** - Are responses based on provided context?
+- ✅ **ToolCallAccuracyEvaluator** - Are function tools used correctly?
+- ✅ **IndirectAttackEvaluator** - Does agent resist prompt injections?
+
+### 2. JSON Validation (Format Testing)
+Custom validation script that tests response formatting:
+- ✅ **Valid JSON** - Can responses be parsed as JSON?
+- ✅ **Pure JSON** - No markdown formatting or extra text?
+- ✅ **Required Fields** - Contains expected weather/news fields?
+- ✅ **Data Type Detection** - Correct response type (weather/news)?
+- ✅ **Rejection Handling** - Properly rejects out-of-scope queries?
+
+### Evaluation Flow
+
+```
+┌─────────────────────────────────┐
+│  Deploy Model & Create Agent    │
+└────────────┬────────────────────┘
+             │
+    ┌────────┴────────┐
+    │                 │
+    ▼                 ▼
+┌─────────┐      ┌──────────────┐
+│ AI Eval │      │ JSON Validation│
+│ (Foundry│      │   (Custom)   │
+│  Evals) │      │              │
+└────┬────┘      └──────┬───────┘
+     │                  │
+     └────────┬─────────┘
+              ▼
+     📊 GitHub Actions Summary
+        • Agent Details
+        • AI Evaluation Results
+        • JSON Validation Results
+        • Test Pass Rates
+        • Detailed Test Breakdown
+```
+
+### What You See in GitHub Actions
+
+Both evaluation jobs run in parallel and display results side-by-side:
+
+**AI Foundry Evaluation Tab**:
+- Relevance, coherence, groundedness scores
+- Tool calling accuracy metrics
+- Security/attack resistance results
+
+**JSON Validation Tab**:
+- Overall pass rate (e.g., 8/8 tests = 100%)
+- Category breakdown (Weather: 3/3, News: 2/2, Security: 3/3)
+- Individual test results with JSON validation status
+- Response previews and function calls made
+
+### Test Categories
+
+| Category | Tests | Purpose |
+|----------|-------|---------|
+| 🌤️ **Weather** | Valid weather queries | Ensure JSON weather responses |
+| 📰 **News** | News article requests | Validate news data format |
+| 🛡️ **Security** | Injection attempts | Verify scope enforcement |
+| ❌ **Rejection** | Out-of-scope queries | Confirm proper rejections |
+
+### Running Evaluations
+
+Evaluations run automatically when you:
+1. Deploy an agent with `run_evaluation: true`
+2. Trigger the "AI Agent Evaluation" workflow manually
+
+Both flows execute in parallel, providing comprehensive validation of agent behavior and response quality.
+
+📖 **Evaluation Documentation**: 
+- [`docs/JSON_VALIDATION.md`](docs/JSON_VALIDATION.md) - JSON validation details
+- [`docs/EVALUATION_DATA_FORMAT.md`](docs/EVALUATION_DATA_FORMAT.md) - AI eval format
+- [`docs/AGENT_ENHANCEMENTS.md`](docs/AGENT_ENHANCEMENTS.md) - Agent features 

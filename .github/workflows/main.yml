@@ -53,6 +53,7 @@ permissions:
 
 jobs:
   run-action:
+    name: AI Foundry Evaluation
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -65,10 +66,49 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Run Evaluation
+      - name: Run AI Agent Evaluation
         uses: microsoft/ai-agent-evals@v2-beta
         with:
           azure-ai-project-endpoint: ${{ inputs.project_endpoint }}
           deployment-name: ${{ inputs.deployment_name }}
           agent-ids: ${{ inputs.agent_id }}
           data-path: ${{ github.workspace }}/evaluations/${{ inputs.data_file }}
+
+  json-validation:
+    name: JSON Response Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Azure login using Federated Credentials
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Install Azure AI SDK
+        run: |
+          pip install azure-ai-projects==1.0.0 azure-ai-agents==1.1.0 azure-identity
+
+      - name: Run JSON Validation Tests
+        env:
+          PROJECT_ENDPOINT: ${{ inputs.project_endpoint }}
+          AGENT_ID: ${{ inputs.agent_id }}
+          AGENT_NAME: 'Weather News Agent'
+        run: |
+          python scripts/validate_json_responses.py
+
+      - name: Upload JSON Validation Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: json-validation-results
+          path: json_validation_results.json
+          retention-days: 30
