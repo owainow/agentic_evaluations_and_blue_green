@@ -2,6 +2,43 @@ name: "AI Agent Evaluation"
 
 on:
   workflow_dispatch:
+    inputs:
+      project_endpoint:
+        description: 'Azure AI Foundry project endpoint'
+        required: true
+        type: string
+      deployment_name:
+        description: 'Model deployment name'
+        required: true
+        type: string
+      agent_id:
+        description: 'Agent ID to evaluate'
+        required: true
+        type: string
+      data_file:
+        description: 'Evaluation data file'
+        required: false
+        type: string
+        default: 'basic_test.json'
+  workflow_call:
+    inputs:
+      project_endpoint:
+        description: 'Azure AI Foundry project endpoint'
+        required: true
+        type: string
+      deployment_name:
+        description: 'Model deployment name'
+        required: true
+        type: string
+      agent_id:
+        description: 'Agent ID to evaluate'
+        required: true
+        type: string
+      data_file:
+        description: 'Evaluation data file'
+        required: false
+        type: string
+        default: 'basic_test.json'
 
 permissions:
   id-token: write
@@ -24,7 +61,7 @@ jobs:
       - name: Run Evaluation
         uses: microsoft/ai-agent-evals@v2-beta
         with:
-          azure-ai-project-endpoint: ${{ secrets.FOUNDRY_ENDPOINT }}
-          deployment-name: ${{ secrets.MODEL_DEPLOYMENT }}
-          agent-ids: ${{ secrets.AGENT_ID_LIST }} }}
-          data-path: ${{ github.workspace }}/evaluations/${{ secrets.DATA_FILE }}
+          azure-ai-project-endpoint: ${{ inputs.project_endpoint }}
+          deployment-name: ${{ inputs.deployment_name }}
+          agent-ids: ${{ inputs.agent_id }}
+          data-path: ${{ github.workspace }}/evaluations/${{ inputs.data_file }}

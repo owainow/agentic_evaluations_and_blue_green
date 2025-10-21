@@ -69,6 +69,18 @@ on:
         required: true
         type: string
         default: 'You are a helpful AI assistant that provides accurate and concise answers.'
+      
+      run_evaluation:
+        description: 'Run evaluation after agent creation'
+        required: false
+        type: boolean
+        default: true
+      
+      evaluation_data_file:
+        description: 'Evaluation data file to use'
+        required: false
+        type: string
+        default: 'basic_test.json'
 
 permissions:
   id-token: write
@@ -329,12 +341,30 @@ jobs:
           
           ## Next Steps
           
+          EOF
+          
+          if [ "${{ inputs.run_evaluation }}" == "true" ] && [ "${{ steps.create_agent.outcome }}" == "success" ]; then
+            cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+          1. **Evaluation will run automatically** in the next job
+          2. **Test the agent** in Azure AI Foundry Studio: [https://ai.azure.com](https://ai.azure.com)
+             - Navigate to your project
+             - Click "My agents" in the left menu
+             - Find your agent: ${{ inputs.agent_name }}
+          3. **Use the agent** via Azure AI Projects SDK (see examples in docs)
+          4. **Monitor usage** in the AI Services resource
+          EOF
+          else
+            cat >> $GITHUB_STEP_SUMMARY << 'EOF'
           1. **Test the agent** in Azure AI Foundry Studio: [https://ai.azure.com](https://ai.azure.com)
              - Navigate to your project
              - Click "My agents" in the left menu
              - Find your agent: ${{ inputs.agent_name }}
           2. **Use the agent** via Azure AI Projects SDK (see examples in docs)
           3. **Monitor usage** in the AI Services resource
+          EOF
+          fi
+          
+          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
           
           ## Useful Commands
           
@@ -358,3 +388,14 @@ jobs:
       agent_name: ${{ steps.create_agent.outputs.agentName }}
       project_endpoint: ${{ steps.project_details.outputs.project_endpoint }}
       project_name: ${{ steps.project_details.outputs.project_name }}
+
+  run-evaluation:
+    name: Run Agent Evaluation
+    needs: deploy-model-and-agent
+    if: ${{ inputs.run_evaluation == true && needs.deploy-model-and-agent.outputs.agent_id != '' }}
+    uses: ./.github/workflows/main.yml
+    with:
+      project_endpoint: ${{ needs.deploy-model-and-agent.outputs.project_endpoint }}
+      deployment_name: ${{ needs.deploy-model-and-agent.outputs.deployment_name }}
+      agent_id: ${{ needs.deploy-model-and-agent.outputs.agent_id }}
+      data_file: ${{ inputs.evaluation_data_file }}

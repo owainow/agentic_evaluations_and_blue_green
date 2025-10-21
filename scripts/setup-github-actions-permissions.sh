@@ -18,7 +18,8 @@ set -e  # Exit on error
 
 SERVICE_PRINCIPAL_NAME="github-actions-aifoundry"
 RESOURCE_GROUP="rg-aifoundry-dev"
-AI_SERVICES_NAME="aif-ais-dev-mf77j5"
+# The AI Foundry resource name (kind=AIServices)
+AI_FOUNDRY_NAME=""  # Leave empty to auto-detect
 
 # ==============================================================================
 # Script starts here
@@ -47,36 +48,52 @@ fi
 echo "✅ Found service principal: ${SP_ID}"
 echo ""
 
-# Get the AI Services resource ID
-echo "2. Finding AI Services resource: ${AI_SERVICES_NAME}"
-AI_SERVICES_ID=$(az cognitiveservices account show \
+# Get the AI Foundry resource ID
+echo "2. Finding AI Foundry resource..."
+if [ -z "$AI_FOUNDRY_NAME" ]; then
+  echo "   Auto-detecting AI Foundry resource (kind=AIServices)..."
+  AI_FOUNDRY_NAME=$(az cognitiveservices account list \
+    --resource-group "${RESOURCE_GROUP}" \
+    --query "[?kind=='AIServices'].name | [0]" -o tsv)
+  
+  if [ -z "$AI_FOUNDRY_NAME" ]; then
+    echo "❌ Error: No AI Foundry resource found in resource group '${RESOURCE_GROUP}'"
+    echo "Available Cognitive Services accounts:"
+    az cognitiveservices account list --resource-group "${RESOURCE_GROUP}" --query "[].{Name:name, Kind:kind}" -o table
+    exit 1
+  fi
+  echo "   Detected: ${AI_FOUNDRY_NAME}"
+fi
+
+AI_FOUNDRY_ID=$(az cognitiveservices account show \
   --resource-group "${RESOURCE_GROUP}" \
-  --name "${AI_SERVICES_NAME}" \
+  --name "${AI_FOUNDRY_NAME}" \
   --query id -o tsv)
 
-if [ -z "$AI_SERVICES_ID" ]; then
-  echo "❌ Error: AI Services resource '${AI_SERVICES_NAME}' not found in resource group '${RESOURCE_GROUP}'"
+if [ -z "$AI_FOUNDRY_ID" ]; then
+  echo "❌ Error: AI Foundry resource '${AI_FOUNDRY_NAME}' not found in resource group '${RESOURCE_GROUP}'"
   exit 1
 fi
 
-echo "✅ Found AI Services: ${AI_SERVICES_ID}"
+echo "✅ Found AI Foundry: ${AI_FOUNDRY_NAME}"
+echo "   Resource ID: ${AI_FOUNDRY_ID}"
 echo ""
 
 # Check if role is already assigned
 echo "3. Checking existing role assignments..."
 EXISTING_ROLE=$(az role assignment list \
   --assignee "${SP_ID}" \
-  --scope "${AI_SERVICES_ID}" \
-  --query "[?roleDefinitionName=='Cognitive Services OpenAI User'].roleDefinitionName | [0]" \
+  --scope "${AI_FOUNDRY_ID}" \
+  --query "[?roleDefinitionName=='Azure AI User'].roleDefinitionName | [0]" \
   -o tsv)
 
 if [ ! -z "$EXISTING_ROLE" ]; then
-  echo "✅ Role 'Cognitive Services OpenAI User' is already assigned"
+  echo "✅ Role 'Azure AI User' is already assigned"
   echo ""
   echo "Current role assignments:"
   az role assignment list \
     --assignee "${SP_ID}" \
-    --scope "${AI_SERVICES_ID}" \
+    --scope "${AI_FOUNDRY_ID}" \
     --query "[].{Role:roleDefinitionName, Scope:scope}" \
     -o table
   echo ""
@@ -84,12 +101,13 @@ if [ ! -z "$EXISTING_ROLE" ]; then
   exit 0
 fi
 
-# Assign the role
-echo "4. Assigning 'Cognitive Services OpenAI User' role..."
+# Assign the Azure AI User role (required for agent creation)
+echo "4. Assigning 'Azure AI User' role..."
+echo "   This role provides the required data action: Microsoft.CognitiveServices/* (includes agents/write)"
 az role assignment create \
   --assignee "${SP_ID}" \
-  --role "Cognitive Services OpenAI User" \
-  --scope "${AI_SERVICES_ID}" \
+  --role "Azure AI User" \
+  --scope "${AI_FOUNDRY_ID}" \
   --output none
 
 echo "✅ Role assigned successfully!"
@@ -99,7 +117,7 @@ echo ""
 echo "5. Verifying role assignments..."
 az role assignment list \
   --assignee "${SP_ID}" \
-  --scope "${AI_SERVICES_ID}" \
+  --scope "${AI_FOUNDRY_ID}" \
   --query "[].{Role:roleDefinitionName, Scope:scope}" \
   -o table
 
@@ -109,18 +127,24 @@ echo "✅ Setup Complete!"
 echo "=========================================="
 echo ""
 echo "The service principal '${SERVICE_PRINCIPAL_NAME}' now has:"
-echo "  ✅ Cognitive Services OpenAI User role"
+echo "  ✅ Azure AI User role on ${AI_FOUNDRY_NAME}"
 echo ""
-echo "Note: Role propagation can take 5-10 minutes."
+echo "This role provides permissions for:"
+echo "  • Creating and managing AI agents (via data action: Microsoft.CognitiveServices/*)"
+echo "  • Using deployed models"
+echo "  • Building and developing in AI Foundry projects"
+echo ""
+echo "⚠️  IMPORTANT: Role propagation can take 5-10 minutes."
 echo "If GitHub Actions still fails, wait a few minutes and try again."
 echo ""
 echo "Next steps:"
-echo "  1. Go to your GitHub repository"
-echo "  2. Navigate to: Settings → Secrets and variables → Actions"
-echo "  3. Verify these secrets exist:"
-echo "     - AZURE_CLIENT_ID"
-echo "     - AZURE_CLIENT_SECRET"
-echo "     - AZURE_TENANT_ID"
-echo "     - AZURE_SUBSCRIPTION_ID"
-echo "  4. Run the 'Deploy Model and Create Agent' workflow"
+echo "  1. Wait 5-10 minutes for role propagation"
+echo "  2. Go to your GitHub repository"
+echo "  3. Navigate to: Actions → Deploy Model and Create Agent"
+echo "  4. Click 'Run workflow'"
+echo ""
+echo "For GitHub secrets setup, ensure these exist in your repo:"
+echo "  - AZURE_CLIENT_ID"
+echo "  - AZURE_TENANT_ID"
+echo "  - AZURE_SUBSCRIPTION_ID (optional, can be set in workflow)"
 echo ""
