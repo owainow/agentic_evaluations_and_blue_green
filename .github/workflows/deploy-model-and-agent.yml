@@ -175,42 +175,45 @@ jobs:
         id: project_details
         shell: bash
         run: |
-          # Get the AI Foundry project details
-          PROJECT_NAME=$(az ml workspace list \
-            --resource-group ${{ env.RESOURCE_GROUP }} \
-            --query "[?kind=='project'].name | [0]" \
-            -o tsv)
+          # Query for AI Foundry project using resource graph
+          # AI Foundry projects are of type Microsoft.MachineLearningServices/workspaces with kind=project
           
-          if [ -z "$PROJECT_NAME" ]; then
-            echo "Error: No AI Foundry project found in resource group"
+          echo "Searching for AI Foundry project in resource group: ${{ env.RESOURCE_GROUP }}"
+          
+          # Get all workspaces and filter for projects
+          WORKSPACE_DATA=$(az resource list \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --resource-type "Microsoft.MachineLearningServices/workspaces" \
+            --query "[?kind=='project' || kind=='Project'] | [0].{name:name, id:id, location:location}" \
+            -o json)
+          
+          if [ "$WORKSPACE_DATA" == "null" ] || [ -z "$WORKSPACE_DATA" ]; then
+            echo "Error: No AI Foundry project found in resource group ${{ env.RESOURCE_GROUP }}"
+            echo "Available resources:"
+            az resource list --resource-group ${{ env.RESOURCE_GROUP }} --query "[].{Name:name, Type:type, Kind:kind}" -o table
             exit 1
           fi
           
-          # Get project resource ID to construct the endpoint
-          PROJECT_ID=$(az ml workspace show \
-            --resource-group ${{ env.RESOURCE_GROUP }} \
-            --name "${PROJECT_NAME}" \
-            --query "id" \
-            -o tsv)
+          PROJECT_NAME=$(echo "$WORKSPACE_DATA" | jq -r '.name')
+          PROJECT_ID=$(echo "$WORKSPACE_DATA" | jq -r '.id')
+          LOCATION=$(echo "$WORKSPACE_DATA" | jq -r '.location')
           
-          # Get the discovery URL which contains the region
-          DISCOVERY_URL=$(az ml workspace show \
-            --resource-group ${{ env.RESOURCE_GROUP }} \
-            --name "${PROJECT_NAME}" \
-            --query "discoveryUrl" \
-            -o tsv)
-          
-          # Extract region from discovery URL (format: https://<region>.api.azureml.ms/...)
-          REGION=$(echo "$DISCOVERY_URL" | sed 's|https://\([^.]*\)\..*|\1|')
+          # Map Azure location to Agent Service region
+          # Agent Service uses specific regions (eastus, westus, etc.)
+          REGION="$LOCATION"
           
           # Construct the Agent Service endpoint
-          # Format: https://<region>.services.ai.azure.com/api/projects/<project-id>
-          PROJECT_ENDPOINT="https://${REGION}.services.ai.azure.com${PROJECT_ID}"
+          # Format: https://<region>.services.ai.azure.com/api/projects/<project-resource-id>
+          PROJECT_ENDPOINT="https://${REGION}.services.ai.azure.com/api${PROJECT_ID}"
           
           echo "project_name=${PROJECT_NAME}" >> $GITHUB_OUTPUT
           echo "project_endpoint=${PROJECT_ENDPOINT}" >> $GITHUB_OUTPUT
-          echo "Found AI Foundry Project: ${PROJECT_NAME}"
-          echo "Project Endpoint: ${PROJECT_ENDPOINT}"
+          echo "project_id=${PROJECT_ID}" >> $GITHUB_OUTPUT
+          
+          echo "✅ Found AI Foundry Project: ${PROJECT_NAME}"
+          echo "   Location: ${LOCATION}"
+          echo "   Resource ID: ${PROJECT_ID}"
+          echo "   Agent Service Endpoint: ${PROJECT_ENDPOINT}"
       
       - name: Set up Python
         uses: actions/setup-python@v5
