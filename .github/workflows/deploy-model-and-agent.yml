@@ -182,16 +182,44 @@ jobs:
             exit 1
           fi
           
-          # Get the hub name (parent workspace)
-          HUB_NAME=$(az resource list \
+          # Get the project's discovery URL from its properties
+          PROJECT_DISCOVERY_URL=$(az ml workspace show \
+            --name "$PROJECT_NAME" \
             --resource-group ${{ env.RESOURCE_GROUP }} \
-            --resource-type "Microsoft.MachineLearningServices/workspaces" \
-            --query "[?kind=='Hub'].name | [0]" \
-            -o tsv)
+            --query discoveryUrl \
+            -o tsv 2>/dev/null || echo "")
           
-          # Get the AI Services endpoint
-          RESOURCE_NAME=$(echo $HUB_NAME | sed 's/-hub-/-/')
-          PROJECT_ENDPOINT="https://${RESOURCE_NAME}.services.ai.azure.com/api/projects/${PROJECT_NAME}"
+          # If ml extension doesn't work, construct from resource properties
+          if [ -z "$PROJECT_DISCOVERY_URL" ]; then
+            echo "Getting discovery URL from resource properties..."
+            PROJECT_DISCOVERY_URL=$(az resource show \
+              --resource-group ${{ env.RESOURCE_GROUP }} \
+              --resource-type "Microsoft.MachineLearningServices/workspaces" \
+              --name "$PROJECT_NAME" \
+              --query properties.discoveryUrl \
+              -o tsv)
+          fi
+          
+          # The discovery URL is like: api://subscriptions/.../workspaces/...
+          # We need to convert it to the project endpoint format
+          # Extract the workspace identifier and construct the endpoint
+          if [ -n "$PROJECT_DISCOVERY_URL" ]; then
+            # Get the workspace ARM ID
+            WORKSPACE_ID=$(az resource show \
+              --resource-group ${{ env.RESOURCE_GROUP }} \
+              --resource-type "Microsoft.MachineLearningServices/workspaces" \
+              --name "$PROJECT_NAME" \
+              --query id \
+              -o tsv)
+            
+            # Extract region and construct the endpoint
+            # The endpoint format should be: https://{region}.api.azureml.ms/api/v1.0/subscriptions/{sub}/resourceGroups/{rg}/providers/Microsoft.MachineLearningServices/workspaces/{workspace}
+            REGION="${{ env.LOCATION }}"
+            PROJECT_ENDPOINT="https://${REGION}.api.azureml.ms${WORKSPACE_ID}"
+          else
+            echo "Warning: Could not get discovery URL, using fallback construction"
+            PROJECT_ENDPOINT="https://${{ env.LOCATION }}.api.azureml.ms/subscriptions/${{ env.AZURE_SUBSCRIPTION_ID }}/resourceGroups/${{ env.RESOURCE_GROUP }}/providers/Microsoft.MachineLearningServices/workspaces/${PROJECT_NAME}"
+          fi
           
           echo "project_name=${PROJECT_NAME}" >> $GITHUB_OUTPUT
           echo "project_endpoint=${PROJECT_ENDPOINT}" >> $GITHUB_OUTPUT
