@@ -1,0 +1,277 @@
+name: Deploy Model and Create Agent
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        type: choice
+        options:
+          - dev
+          - test
+          - prod
+        default: 'dev'
+      
+      model_name:
+        description: 'Model to deploy'
+        required: true
+        type: choice
+        options:
+          - gpt-4o
+          - gpt-4o-mini
+          - gpt-4
+          - gpt-4-turbo
+          - gpt-35-turbo
+          - gpt-35-turbo-16k
+        default: 'gpt-4o'
+      
+      model_version:
+        description: 'Model version'
+        required: true
+        type: string
+        default: '2024-11-20'
+      
+      deployment_name:
+        description: 'Name for the model deployment (leave empty to auto-generate)'
+        required: false
+        type: string
+      
+      sku_name:
+        description: 'Deployment SKU type'
+        required: true
+        type: choice
+        options:
+          - Standard
+          - GlobalStandard
+          - DataZoneStandard
+        default: 'Standard'
+      
+      capacity:
+        description: 'Deployment capacity (TPM in thousands)'
+        required: true
+        type: number
+        default: 10
+      
+      agent_name:
+        description: 'Name for the agent'
+        required: true
+        type: string
+        default: 'test-agent'
+      
+      agent_instructions:
+        description: 'Instructions for the agent'
+        required: true
+        type: string
+        default: 'You are a helpful AI assistant that provides accurate and concise answers.'
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AZURE_SUBSCRIPTION_ID: '269eee56-58bc-45eb-9dca-4d22421c45fa'
+  RESOURCE_GROUP: 'rg-aifoundry-dev'
+  LOCATION: 'eastus'
+
+jobs:
+  deploy-model-and-agent:
+    name: Deploy Model and Create Agent
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ env.AZURE_SUBSCRIPTION_ID }}
+      
+      - name: Generate deployment name
+        id: deployment_name
+        shell: bash
+        run: |
+          if [ -n "${{ inputs.deployment_name }}" ]; then
+            DEPLOYMENT_NAME="${{ inputs.deployment_name }}"
+          else
+            # Auto-generate deployment name: model-environment-timestamp
+            TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+            DEPLOYMENT_NAME="${{ inputs.model_name }}-${{ inputs.environment }}-${TIMESTAMP}"
+          fi
+          echo "deployment_name=${DEPLOYMENT_NAME}" >> $GITHUB_OUTPUT
+          echo "Generated deployment name: ${DEPLOYMENT_NAME}"
+      
+      - name: Get AI Services name
+        id: ai_services
+        shell: bash
+        run: |
+          # Get the AI Services account name from the existing deployment
+          AI_SERVICES_NAME=$(az cognitiveservices account list \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --query "[?kind=='AIServices'].name | [0]" \
+            -o tsv)
+          
+          if [ -z "$AI_SERVICES_NAME" ]; then
+            echo "Error: No AI Services account found in resource group"
+            exit 1
+          fi
+          
+          echo "ai_services_name=${AI_SERVICES_NAME}" >> $GITHUB_OUTPUT
+          echo "Found AI Services account: ${AI_SERVICES_NAME}"
+      
+      - name: Deploy Model
+        id: deploy_model
+        shell: bash
+        run: |
+          echo "Deploying ${{ inputs.model_name }} (version ${{ inputs.model_version }})..."
+          
+          # Deploy using BICEP template
+          DEPLOYMENT_OUTPUT=$(az deployment group create \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --template-file infrastructure/model-deployment.bicep \
+            --parameters \
+              aiServicesName="${{ steps.ai_services.outputs.ai_services_name }}" \
+              deploymentName="${{ steps.deployment_name.outputs.deployment_name }}" \
+              modelName="${{ inputs.model_name }}" \
+              modelVersion="${{ inputs.model_version }}" \
+              skuName="${{ inputs.sku_name }}" \
+              capacity=${{ inputs.capacity }} \
+            --query 'properties.outputs' \
+            -o json)
+          
+          echo "Deployment completed!"
+          echo "$DEPLOYMENT_OUTPUT" | jq '.'
+          
+          # Extract outputs
+          ENDPOINT=$(echo "$DEPLOYMENT_OUTPUT" | jq -r '.endpoint.value')
+          DEPLOYMENT_ID=$(echo "$DEPLOYMENT_OUTPUT" | jq -r '.deploymentId.value')
+          
+          echo "endpoint=${ENDPOINT}" >> $GITHUB_OUTPUT
+          echo "deployment_id=${DEPLOYMENT_ID}" >> $GITHUB_OUTPUT
+      
+      - name: Verify Model Deployment
+        shell: bash
+        run: |
+          echo "Verifying model deployment..."
+          
+          DEPLOYMENT_STATUS=$(az cognitiveservices account deployment show \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --name ${{ steps.ai_services.outputs.ai_services_name }} \
+            --deployment-name ${{ steps.deployment_name.outputs.deployment_name }} \
+            --query '{Name:name, Model:properties.model.name, Version:properties.model.version, State:properties.provisioningState, Capacity:sku.capacity}' \
+            -o table)
+          
+          echo "$DEPLOYMENT_STATUS"
+      
+      - name: Get Project Endpoint
+        id: project
+        shell: bash
+        run: |
+          # Get the AI Foundry project details
+          PROJECT_NAME=$(az resource list \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --resource-type "Microsoft.MachineLearningServices/workspaces" \
+            --query "[?kind=='Project'].name | [0]" \
+            -o tsv)
+          
+          if [ -z "$PROJECT_NAME" ]; then
+            echo "Error: No AI Foundry project found"
+            exit 1
+          fi
+          
+          # Get the hub name (parent workspace)
+          HUB_NAME=$(az resource list \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --resource-type "Microsoft.MachineLearningServices/workspaces" \
+            --query "[?kind=='Hub'].name | [0]" \
+            -o tsv)
+          
+          # Get the AI Services endpoint
+          RESOURCE_NAME=$(echo $HUB_NAME | sed 's/-hub-/-/')
+          PROJECT_ENDPOINT="https://${RESOURCE_NAME}.services.ai.azure.com/api/projects/${PROJECT_NAME}"
+          
+          echo "project_name=${PROJECT_NAME}" >> $GITHUB_OUTPUT
+          echo "project_endpoint=${PROJECT_ENDPOINT}" >> $GITHUB_OUTPUT
+          echo "Found project: ${PROJECT_NAME}"
+          echo "Project endpoint: ${PROJECT_ENDPOINT}"
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install azure-ai-projects azure-identity
+      
+      - name: Create AI Agent
+        id: create_agent
+        shell: bash
+        env:
+          PROJECT_ENDPOINT: ${{ steps.project.outputs.project_endpoint }}
+          MODEL_DEPLOYMENT_NAME: ${{ steps.deployment_name.outputs.deployment_name }}
+          AGENT_NAME: ${{ inputs.agent_name }}
+          AGENT_INSTRUCTIONS: ${{ inputs.agent_instructions }}
+          AGENT_DESCRIPTION: "Agent using ${{ inputs.model_name }} v${{ inputs.model_version }} - Environment: ${{ inputs.environment }}"
+        run: |
+          echo "Creating agent with model deployment: ${MODEL_DEPLOYMENT_NAME}"
+          python scripts/create_agent.py
+      
+      - name: Create Deployment Summary
+        shell: bash
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY << EOF
+          # 🤖 Model Deployment & Agent Creation Summary
+          
+          ## Deployment Details
+          
+          | Property | Value |
+          |----------|-------|
+          | **Environment** | ${{ inputs.environment }} |
+          | **Model** | ${{ inputs.model_name }} |
+          | **Version** | ${{ inputs.model_version }} |
+          | **Deployment Name** | ${{ steps.deployment_name.outputs.deployment_name }} |
+          | **SKU** | ${{ inputs.sku_name }} |
+          | **Capacity** | ${{ inputs.capacity }} TPM (thousands) |
+          | **AI Services** | ${{ steps.ai_services.outputs.ai_services_name }} |
+          
+          ## Agent Details
+          
+          | Property | Value |
+          |----------|-------|
+          | **Agent Name** | ${{ inputs.agent_name }} |
+          | **Agent ID** | ${{ steps.create_agent.outputs.agent_id }} |
+          | **Project** | ${{ steps.project.outputs.project_name }} |
+          | **Model Deployment** | ${{ steps.deployment_name.outputs.deployment_name }} |
+          
+          ## Next Steps
+          
+          1. **Test the agent** in Azure AI Foundry portal: [https://ai.azure.com](https://ai.azure.com)
+          2. **Monitor usage** in the AI Services resource
+          3. **Run evaluations** against this agent
+          
+          ## Useful Commands
+          
+          \`\`\`bash
+          # List all deployments
+          az cognitiveservices account deployment list \\
+            --resource-group ${{ env.RESOURCE_GROUP }} \\
+            --name ${{ steps.ai_services.outputs.ai_services_name }}
+          
+          # Delete this deployment
+          az cognitiveservices account deployment delete \\
+            --resource-group ${{ env.RESOURCE_GROUP }} \\
+            --name ${{ steps.ai_services.outputs.ai_services_name }} \\
+            --deployment-name ${{ steps.deployment_name.outputs.deployment_name }}
+          \`\`\`
+          EOF
+    
+    outputs:
+      deployment_name: ${{ steps.deployment_name.outputs.deployment_name }}
+      agent_id: ${{ steps.create_agent.outputs.agent_id }}
+      agent_name: ${{ steps.create_agent.outputs.agent_name }}
+      project_endpoint: ${{ steps.project.outputs.project_endpoint }}
