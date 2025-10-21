@@ -175,44 +175,64 @@ jobs:
         id: project_details
         shell: bash
         run: |
-          # Query for AI Foundry project using resource graph
-          # AI Foundry projects are of type Microsoft.MachineLearningServices/workspaces with kind=project
-          
+          # Query for AI Foundry project and AI Hub
           echo "Searching for AI Foundry project in resource group: ${{ env.RESOURCE_GROUP }}"
           
-          # Get all workspaces and filter for projects
-          WORKSPACE_DATA=$(az resource list \
+          # Get the AI Foundry project
+          PROJECT_DATA=$(az resource list \
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --resource-type "Microsoft.MachineLearningServices/workspaces" \
-            --query "[?kind=='project' || kind=='Project'] | [0].{name:name, id:id, location:location}" \
+            --query "[?kind=='project' || kind=='Project'] | [0].{name:name, id:id, properties:properties}" \
             -o json)
           
-          if [ "$WORKSPACE_DATA" == "null" ] || [ -z "$WORKSPACE_DATA" ]; then
+          if [ "$PROJECT_DATA" == "null" ] || [ -z "$PROJECT_DATA" ]; then
             echo "Error: No AI Foundry project found in resource group ${{ env.RESOURCE_GROUP }}"
-            echo "Available resources:"
-            az resource list --resource-group ${{ env.RESOURCE_GROUP }} --query "[].{Name:name, Type:type, Kind:kind}" -o table
+            echo "Available workspaces:"
+            az resource list --resource-group ${{ env.RESOURCE_GROUP }} --resource-type "Microsoft.MachineLearningServices/workspaces" --query "[].{Name:name, Kind:kind}" -o table
             exit 1
           fi
           
-          PROJECT_NAME=$(echo "$WORKSPACE_DATA" | jq -r '.name')
-          PROJECT_ID=$(echo "$WORKSPACE_DATA" | jq -r '.id')
-          LOCATION=$(echo "$WORKSPACE_DATA" | jq -r '.location')
+          PROJECT_NAME=$(echo "$PROJECT_DATA" | jq -r '.name')
           
-          # Map Azure location to Agent Service region
-          # Agent Service uses specific regions (eastus, westus, etc.)
-          REGION="$LOCATION"
+          # Get the Hub resource ID from the project properties
+          HUB_ID=$(echo "$PROJECT_DATA" | jq -r '.properties.hubResourceId // .properties.workspaceHubConfig.id // empty')
+          
+          if [ -z "$HUB_ID" ]; then
+            echo "Error: Could not find Hub resource ID in project properties"
+            exit 1
+          fi
+          
+          # Extract Hub name from Hub resource ID
+          HUB_NAME=$(echo "$HUB_ID" | sed 's|.*/||')
+          
+          # Get the Hub's discovery URL which contains the correct endpoint domain
+          HUB_DATA=$(az resource show \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --resource-type "Microsoft.MachineLearningServices/workspaces" \
+            --name "${HUB_NAME}" \
+            --query "{discoveryUrl:properties.discoveryUrl, workspaceId:properties.workspaceId}" \
+            -o json)
+          
+          DISCOVERY_URL=$(echo "$HUB_DATA" | jq -r '.discoveryUrl')
+          WORKSPACE_ID=$(echo "$HUB_DATA" | jq -r '.workspaceId')
+          
+          # Extract the domain from discovery URL
+          # Format: https://12345678-1234-1234-1234-123456789012.workspace.eastus.api.azureml.ms/...
+          # We need the workspace GUID
+          WORKSPACE_GUID=$(echo "$DISCOVERY_URL" | sed -E 's|https://([^.]+)\..*|\1|')
           
           # Construct the Agent Service endpoint
-          # Format: https://<region>.services.ai.azure.com/api/projects/<project-resource-id>
-          PROJECT_ENDPOINT="https://${REGION}.services.ai.azure.com/api${PROJECT_ID}"
+          # Format: https://{workspace-guid}.services.ai.azure.com/api/projects/{project-name}
+          PROJECT_ENDPOINT="https://${WORKSPACE_GUID}.services.ai.azure.com/api/projects/${PROJECT_NAME}"
           
           echo "project_name=${PROJECT_NAME}" >> $GITHUB_OUTPUT
           echo "project_endpoint=${PROJECT_ENDPOINT}" >> $GITHUB_OUTPUT
-          echo "project_id=${PROJECT_ID}" >> $GITHUB_OUTPUT
+          echo "hub_name=${HUB_NAME}" >> $GITHUB_OUTPUT
+          echo "workspace_guid=${WORKSPACE_GUID}" >> $GITHUB_OUTPUT
           
           echo "✅ Found AI Foundry Project: ${PROJECT_NAME}"
-          echo "   Location: ${LOCATION}"
-          echo "   Resource ID: ${PROJECT_ID}"
+          echo "   Hub: ${HUB_NAME}"
+          echo "   Workspace GUID: ${WORKSPACE_GUID}"
           echo "   Agent Service Endpoint: ${PROJECT_ENDPOINT}"
       
       - name: Set up Python
