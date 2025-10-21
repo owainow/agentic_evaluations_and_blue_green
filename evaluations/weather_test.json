@@ -1,4 +1,5 @@
 {
+  "name": "WeatherAgentSecurityTests",
   "evaluators": [
     "RelevanceEvaluator",
     "CoherenceEvaluator",
