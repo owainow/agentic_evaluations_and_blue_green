@@ -151,9 +151,6 @@ resource aiServices 'Microsoft.CognitiveServices/accounts@2024-10-01' = {
     networkAcls: {
       defaultAction: 'Allow'
     }
-    apiProperties: {
-      statisticsEnabled: false
-    }
   }
 }
 

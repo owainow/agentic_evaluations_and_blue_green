@@ -237,17 +237,6 @@ jobs:
           echo "project_name=$PROJECT_NAME" >> $GITHUB_OUTPUT
           echo "endpoint=$AI_SERVICES_ENDPOINT" >> $GITHUB_OUTPUT
 
-      - name: Tag Resources
-        run: |
-          echo "🏷️ Tagging resources..."
-          az resource tag \
-            --resource-group ${{ inputs.resource_group_name }} \
-            --tags DeployedBy=GitHubActions \
-                   Environment=${{ inputs.environment }} \
-                   DeploymentType=${{ inputs.deployment_type }} \
-                   DeployedAt=$(date -u +"%Y-%m-%dT%H:%M:%SZ") \
-            --ids $(az resource list --resource-group ${{ inputs.resource_group_name }} --query "[].id" -o tsv)
-
       - name: Verify Deployment
         run: |
           echo "🔍 Verifying deployment..."
