@@ -166,33 +166,18 @@ jobs:
           
           echo "$DEPLOYMENT_STATUS"
       
-      - name: Get Project Endpoint
-        id: project
+      - name: Get Azure OpenAI Endpoint
+        id: openai_endpoint
         shell: bash
         run: |
-          # Get the AI Foundry project name
-          PROJECT_NAME=$(az resource list \
-            --resource-group ${{ env.RESOURCE_GROUP }} \
-            --resource-type "Microsoft.MachineLearningServices/workspaces" \
-            --query "[?kind=='Project'].name | [0]" \
-            -o tsv)
-          
-          if [ -z "$PROJECT_NAME" ]; then
-            echo "Error: No AI Foundry project found"
-            exit 1
-          fi
-          
-          # Get the AI Services account name (already retrieved earlier)
+          # Get the AI Services account name
           AI_SERVICES_NAME="${{ steps.ai_services.outputs.ai_services_name }}"
           
-          # The endpoint format is: https://{ai-services-name}.services.ai.azure.com/api/projects/{project-name}
-          # This is the format documented for AIProjectClient endpoint parameter
-          PROJECT_ENDPOINT="https://${AI_SERVICES_NAME}.services.ai.azure.com/api/projects/${PROJECT_NAME}"
+          # Azure OpenAI endpoint format
+          OPENAI_ENDPOINT="https://${AI_SERVICES_NAME}.openai.azure.com/"
           
-          echo "project_name=${PROJECT_NAME}" >> $GITHUB_OUTPUT
-          echo "project_endpoint=${PROJECT_ENDPOINT}" >> $GITHUB_OUTPUT
-          echo "Found project: ${PROJECT_NAME}"
-          echo "Project endpoint: ${PROJECT_ENDPOINT}"
+          echo "openai_endpoint=${OPENAI_ENDPOINT}" >> $GITHUB_OUTPUT
+          echo "Azure OpenAI Endpoint: ${OPENAI_ENDPOINT}"
       
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -202,20 +187,34 @@ jobs:
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install azure-ai-projects azure-identity
+          pip install openai azure-identity
       
-      - name: Create AI Agent
-        id: create_agent
+      - name: Create AI Assistant
+        id: create_assistant
+        continue-on-error: true
         shell: bash
         env:
-          PROJECT_ENDPOINT: ${{ steps.project.outputs.project_endpoint }}
+          AZURE_OPENAI_ENDPOINT: ${{ steps.openai_endpoint.outputs.openai_endpoint }}
           MODEL_DEPLOYMENT_NAME: ${{ steps.deployment_name.outputs.deployment_name }}
-          AGENT_NAME: ${{ inputs.agent_name }}
-          AGENT_INSTRUCTIONS: ${{ inputs.agent_instructions }}
-          AGENT_DESCRIPTION: "Agent using ${{ inputs.model_name }} v${{ inputs.model_version }} - Environment: ${{ inputs.environment }}"
+          ASSISTANT_NAME: ${{ inputs.agent_name }}
+          ASSISTANT_INSTRUCTIONS: ${{ inputs.agent_instructions }}
+          API_VERSION: "2024-05-01-preview"
         run: |
-          echo "Creating agent with model deployment: ${MODEL_DEPLOYMENT_NAME}"
-          python scripts/create_agent.py
+          echo "Creating assistant with model deployment: ${MODEL_DEPLOYMENT_NAME}"
+          python scripts/create_assistant.py
+      
+      - name: Assistant Creation Status
+        shell: bash
+        run: |
+          if [ "${{ steps.create_assistant.outcome }}" == "failure" ]; then
+            echo "⚠️ Assistant creation failed."
+            echo ""
+            echo "The model deployment was successful. You can still use the deployed model directly."
+            echo "Check the logs above for specific error details."
+          else
+            echo "✅ Assistant created successfully!"
+            echo "Assistant ID: ${{ steps.create_assistant.outputs.assistant_id }}"
+          fi
       
       - name: Create Deployment Summary
         shell: bash
@@ -235,20 +234,39 @@ jobs:
           | **Capacity** | ${{ inputs.capacity }} TPM (thousands) |
           | **AI Services** | ${{ steps.ai_services.outputs.ai_services_name }} |
           
-          ## Agent Details
+          ## Assistant Details
           
+          EOF
+          
+          if [ "${{ steps.create_assistant.outcome }}" == "success" ]; then
+            cat >> $GITHUB_STEP_SUMMARY << EOF
           | Property | Value |
           |----------|-------|
-          | **Agent Name** | ${{ inputs.agent_name }} |
-          | **Agent ID** | ${{ steps.create_agent.outputs.agent_id }} |
-          | **Project** | ${{ steps.project.outputs.project_name }} |
+          | **Status** | ✅ Created Successfully |
+          | **Assistant Name** | ${{ inputs.agent_name }} |
+          | **Assistant ID** | ${{ steps.create_assistant.outputs.assistant_id }} |
           | **Model Deployment** | ${{ steps.deployment_name.outputs.deployment_name }} |
+          | **Endpoint** | ${{ steps.openai_endpoint.outputs.openai_endpoint }} |
+          EOF
+          else
+            cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+          | Property | Value |
+          |----------|-------|
+          | **Status** | ⚠️ Creation Failed |
+          | **Assistant Name** | ${{ inputs.agent_name }} (not created) |
+          
+          > **Note**: Check the logs above for error details.
+          > The model deployment is complete and can be used directly.
+          EOF
+          fi
+          
+          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
           
           ## Next Steps
           
-          1. **Test the agent** in Azure AI Foundry portal: [https://ai.azure.com](https://ai.azure.com)
-          2. **Monitor usage** in the AI Services resource
-          3. **Run evaluations** against this agent
+          1. **Test the assistant** in Azure AI Foundry portal: [https://ai.azure.com](https://ai.azure.com)
+          2. **Use the deployment** directly with Azure OpenAI SDK (see examples in Azure portal)
+          3. **Monitor usage** in the AI Services resource
           
           ## Useful Commands
           
@@ -268,6 +286,6 @@ jobs:
     
     outputs:
       deployment_name: ${{ steps.deployment_name.outputs.deployment_name }}
-      agent_id: ${{ steps.create_agent.outputs.agent_id }}
-      agent_name: ${{ steps.create_agent.outputs.agent_name }}
-      project_endpoint: ${{ steps.project.outputs.project_endpoint }}
+      assistant_id: ${{ steps.create_assistant.outputs.assistant_id }}
+      assistant_name: ${{ steps.create_assistant.outputs.assistant_name }}
+      openai_endpoint: ${{ steps.openai_endpoint.outputs.openai_endpoint }}
