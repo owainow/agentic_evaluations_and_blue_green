@@ -1,0 +1,89 @@
+name: Destroy Azure AI Foundry Infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to destroy'
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+        default: 'dev'
+      resource_group_name:
+        description: 'Resource group name to delete'
+        required: true
+        type: string
+        default: 'rg-aifoundry-dev'
+      confirm_delete:
+        description: 'Type "DELETE" to confirm deletion'
+        required: true
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  confirm:
+    name: Confirm Deletion
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate Confirmation
+        run: |
+          if [ "${{ inputs.confirm_delete }}" != "DELETE" ]; then
+            echo "❌ Deletion not confirmed. You must type 'DELETE' to proceed."
+            exit 1
+          fi
+          echo "✅ Deletion confirmed"
+
+  destroy:
+    name: Delete Azure Resources
+    runs-on: ubuntu-latest
+    needs: confirm
+    environment: ${{ inputs.environment }}
+    steps:
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: List Resources Before Deletion
+        run: |
+          echo "📋 Resources that will be deleted:"
+          az resource list \
+            --resource-group ${{ inputs.resource_group_name }} \
+            --output table
+
+      - name: Delete Resource Group
+        run: |
+          echo "🗑️ Deleting resource group: ${{ inputs.resource_group_name }}"
+          echo "⚠️ This action cannot be undone!"
+          
+          az group delete \
+            --name ${{ inputs.resource_group_name }} \
+            --yes \
+            --no-wait
+          
+          echo "✅ Deletion initiated (async)"
+          echo "⏳ Resources will be deleted in the background"
+
+      - name: Create Summary
+        run: |
+          echo "# 🗑️ Infrastructure Deletion Initiated" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Details" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Environment | \`${{ inputs.environment }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Resource Group | \`${{ inputs.resource_group_name }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Status | Deletion in progress (async) |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "⚠️ **Note**: Resource deletion is asynchronous and may take several minutes to complete." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "You can monitor the deletion status in the [Azure Portal](https://portal.azure.com)." >> $GITHUB_STEP_SUMMARY

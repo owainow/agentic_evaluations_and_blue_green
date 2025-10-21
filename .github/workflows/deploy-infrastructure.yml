@@ -1,0 +1,338 @@
+name: Deploy Azure AI Foundry Infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+        default: 'dev'
+      deployment_type:
+        description: 'Deployment type'
+        required: true
+        type: choice
+        options:
+          - basic
+          - standard
+        default: 'basic'
+      resource_group_name:
+        description: 'Resource group name'
+        required: true
+        type: string
+        default: 'rg-aifoundry-dev'
+      location:
+        description: 'Azure region'
+        required: true
+        type: choice
+        options:
+          - eastus
+          - eastus2
+          - westus
+          - westus2
+          - westus3
+          - centralus
+          - northeurope
+          - westeurope
+          - uksouth
+          - australiaeast
+        default: 'eastus'
+      ai_foundry_name:
+        description: 'AI Foundry resource name (leave empty for auto-generated)'
+        required: false
+        type: string
+      ai_project_name:
+        description: 'Project name'
+        required: false
+        type: string
+        default: 'agent-project'
+      model_deployment_name:
+        description: 'Model deployment name'
+        required: false
+        type: string
+        default: 'gpt-4o'
+      model_name:
+        description: 'Model name'
+        required: false
+        type: choice
+        options:
+          - gpt-4o
+          - gpt-4o-mini
+          - gpt-4
+          - gpt-35-turbo
+        default: 'gpt-4o'
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+jobs:
+  validate:
+    name: Validate BICEP Templates
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Validate Basic BICEP template
+        if: inputs.deployment_type == 'basic'
+        run: |
+          az bicep build --file infrastructure/main.bicep
+          echo "✅ Basic BICEP template is valid"
+
+      - name: Validate Standard BICEP template
+        if: inputs.deployment_type == 'standard'
+        run: |
+          az bicep build --file infrastructure/main.standard.bicep
+          echo "✅ Standard BICEP template is valid"
+
+      - name: What-If Analysis
+        run: |
+          TEMPLATE_FILE="infrastructure/main.bicep"
+          if [ "${{ inputs.deployment_type }}" == "standard" ]; then
+            TEMPLATE_FILE="infrastructure/main.standard.bicep"
+          fi
+          
+          # Generate unique name if not provided
+          AI_FOUNDRY_NAME="${{ inputs.ai_foundry_name }}"
+          if [ -z "$AI_FOUNDRY_NAME" ]; then
+            AI_FOUNDRY_NAME="aifoundry-${{ inputs.environment }}-$(date +%s | tail -c 6)"
+          fi
+          
+          echo "🔍 Running What-If analysis..."
+          if [ "${{ inputs.deployment_type }}" == "basic" ]; then
+            az deployment group what-if \
+              --resource-group ${{ inputs.resource_group_name }} \
+              --template-file $TEMPLATE_FILE \
+              --parameters aiFoundryName=$AI_FOUNDRY_NAME \
+                          aiProjectName=${{ inputs.ai_project_name }} \
+                          location=${{ inputs.location }} \
+                          modelDeploymentName=${{ inputs.model_deployment_name }} \
+                          modelName=${{ inputs.model_name }} \
+              --no-pretty-print
+          else
+            az deployment group what-if \
+              --resource-group ${{ inputs.resource_group_name }} \
+              --template-file $TEMPLATE_FILE \
+              --parameters baseName="aifoundry-${{ inputs.environment }}" \
+                          location=${{ inputs.location }} \
+                          modelDeploymentName=${{ inputs.model_deployment_name }} \
+                          modelName=${{ inputs.model_name }} \
+              --no-pretty-print
+          fi
+
+  deploy:
+    name: Deploy to Azure
+    runs-on: ubuntu-latest
+    needs: validate
+    environment: ${{ inputs.environment }}
+    outputs:
+      ai_foundry_name: ${{ steps.deploy.outputs.ai_foundry_name }}
+      project_name: ${{ steps.deploy.outputs.project_name }}
+      endpoint: ${{ steps.deploy.outputs.endpoint }}
+      resource_group: ${{ inputs.resource_group_name }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Create Resource Group
+        run: |
+          echo "📦 Creating resource group: ${{ inputs.resource_group_name }}"
+          az group create \
+            --name ${{ inputs.resource_group_name }} \
+            --location ${{ inputs.location }} \
+            --tags Environment=${{ inputs.environment }} DeployedBy=GitHubActions
+
+      - name: Deploy Infrastructure
+        id: deploy
+        run: |
+          TEMPLATE_FILE="infrastructure/main.bicep"
+          DEPLOYMENT_NAME="aifoundry-$(date +%Y%m%d-%H%M%S)"
+          
+          # Generate unique name if not provided
+          AI_FOUNDRY_NAME="${{ inputs.ai_foundry_name }}"
+          if [ -z "$AI_FOUNDRY_NAME" ]; then
+            AI_FOUNDRY_NAME="aifoundry-${{ inputs.environment }}-$(date +%s | tail -c 6)"
+          fi
+          
+          echo "🚀 Deploying Azure AI Foundry infrastructure..."
+          echo "   Environment: ${{ inputs.environment }}"
+          echo "   Type: ${{ inputs.deployment_type }}"
+          echo "   Resource Group: ${{ inputs.resource_group_name }}"
+          echo "   Location: ${{ inputs.location }}"
+          echo "   AI Foundry Name: $AI_FOUNDRY_NAME"
+          echo ""
+          
+          if [ "${{ inputs.deployment_type }}" == "basic" ]; then
+            az deployment group create \
+              --name $DEPLOYMENT_NAME \
+              --resource-group ${{ inputs.resource_group_name }} \
+              --template-file infrastructure/main.bicep \
+              --parameters aiFoundryName=$AI_FOUNDRY_NAME \
+                          aiProjectName=${{ inputs.ai_project_name }} \
+                          location=${{ inputs.location }} \
+                          modelDeploymentName=${{ inputs.model_deployment_name }} \
+                          modelName=${{ inputs.model_name }}
+          else
+            az deployment group create \
+              --name $DEPLOYMENT_NAME \
+              --resource-group ${{ inputs.resource_group_name }} \
+              --template-file infrastructure/main.standard.bicep \
+              --parameters baseName="aifoundry-${{ inputs.environment }}" \
+                          location=${{ inputs.location }} \
+                          modelDeploymentName=${{ inputs.model_deployment_name }} \
+                          modelName=${{ inputs.model_name }}
+          fi
+          
+          echo ""
+          echo "✅ Deployment completed successfully!"
+          echo ""
+          
+          # Get outputs
+          echo "📊 Deployment Outputs:"
+          OUTPUTS=$(az deployment group show \
+            --name $DEPLOYMENT_NAME \
+            --resource-group ${{ inputs.resource_group_name }} \
+            --query properties.outputs)
+          
+          echo "$OUTPUTS" | jq .
+          
+          # Set outputs for next jobs
+          AI_FOUNDRY_RESOURCE_NAME=$(echo $OUTPUTS | jq -r '.aiFoundryResourceName.value')
+          PROJECT_NAME=$(echo $OUTPUTS | jq -r '.projectName.value')
+          ENDPOINT=$(echo $OUTPUTS | jq -r '.aiFoundryEndpoint.value')
+          
+          echo "ai_foundry_name=$AI_FOUNDRY_RESOURCE_NAME" >> $GITHUB_OUTPUT
+          echo "project_name=$PROJECT_NAME" >> $GITHUB_OUTPUT
+          echo "endpoint=$ENDPOINT" >> $GITHUB_OUTPUT
+
+      - name: Tag Resources
+        run: |
+          echo "🏷️ Tagging resources..."
+          az resource tag \
+            --resource-group ${{ inputs.resource_group_name }} \
+            --tags DeployedBy=GitHubActions \
+                   Environment=${{ inputs.environment }} \
+                   DeploymentType=${{ inputs.deployment_type }} \
+                   DeployedAt=$(date -u +"%Y-%m-%dT%H:%M:%SZ") \
+            --ids $(az resource list --resource-group ${{ inputs.resource_group_name }} --query "[].id" -o tsv)
+
+      - name: Verify Deployment
+        run: |
+          echo "🔍 Verifying deployment..."
+          
+          # List all resources
+          echo "Resources created:"
+          az resource list \
+            --resource-group ${{ inputs.resource_group_name }} \
+            --output table
+          
+          # Check AI Foundry resource
+          echo ""
+          echo "Checking AI Foundry resource..."
+          az cognitiveservices account show \
+            --name ${{ steps.deploy.outputs.ai_foundry_name }} \
+            --resource-group ${{ inputs.resource_group_name }} \
+            --query "{Name:name, Kind:kind, SKU:sku.name, Endpoint:properties.endpoint, ProvisioningState:properties.provisioningState}" \
+            --output table
+
+  post-deployment:
+    name: Post-Deployment Steps
+    runs-on: ubuntu-latest
+    needs: deploy
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Create GitHub Environment Variables
+        run: |
+          echo "💾 Saving deployment information..."
+          echo "AI_FOUNDRY_NAME=${{ needs.deploy.outputs.ai_foundry_name }}" >> deployment-info.txt
+          echo "PROJECT_NAME=${{ needs.deploy.outputs.project_name }}" >> deployment-info.txt
+          echo "ENDPOINT=${{ needs.deploy.outputs.endpoint }}" >> deployment-info.txt
+          echo "RESOURCE_GROUP=${{ needs.deploy.outputs.resource_group }}" >> deployment-info.txt
+          echo "ENVIRONMENT=${{ inputs.environment }}" >> deployment-info.txt
+          
+          cat deployment-info.txt
+
+      - name: Create Summary
+        run: |
+          echo "# 🎉 Deployment Successful!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## Deployment Details" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Environment | \`${{ inputs.environment }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Deployment Type | \`${{ inputs.deployment_type }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Resource Group | \`${{ needs.deploy.outputs.resource_group }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Location | \`${{ inputs.location }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| AI Foundry Name | \`${{ needs.deploy.outputs.ai_foundry_name }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Project Name | \`${{ needs.deploy.outputs.project_name }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Model | \`${{ inputs.model_name }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 🔗 Quick Links" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- [Azure AI Foundry Portal](https://ai.azure.com)" >> $GITHUB_STEP_SUMMARY
+          echo "- [Azure Portal - Resource Group](https://portal.azure.com/#@/resource/subscriptions/${{ secrets.AZURE_SUBSCRIPTION_ID }}/resourceGroups/${{ needs.deploy.outputs.resource_group }})" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 🚀 Next Steps" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "1. Visit [Azure AI Foundry](https://ai.azure.com)" >> $GITHUB_STEP_SUMMARY
+          echo "2. Select project: **${{ needs.deploy.outputs.project_name }}**" >> $GITHUB_STEP_SUMMARY
+          echo "3. Start building agents!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 🤖 Create Your First Agent" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo '```python' >> $GITHUB_STEP_SUMMARY
+          echo 'from azure.ai.projects import AIProjectClient' >> $GITHUB_STEP_SUMMARY
+          echo 'from azure.identity import DefaultAzureCredential' >> $GITHUB_STEP_SUMMARY
+          echo '' >> $GITHUB_STEP_SUMMARY
+          echo 'client = AIProjectClient(' >> $GITHUB_STEP_SUMMARY
+          echo "    endpoint=\"${{ needs.deploy.outputs.endpoint }}\"," >> $GITHUB_STEP_SUMMARY
+          echo '    credential=DefaultAzureCredential()' >> $GITHUB_STEP_SUMMARY
+          echo ')' >> $GITHUB_STEP_SUMMARY
+          echo '' >> $GITHUB_STEP_SUMMARY
+          echo 'with client:' >> $GITHUB_STEP_SUMMARY
+          echo '    agent = client.agents.create_agent(' >> $GITHUB_STEP_SUMMARY
+          echo "        model=\"${{ inputs.model_deployment_name }}\"," >> $GITHUB_STEP_SUMMARY
+          echo '        name="my-assistant",' >> $GITHUB_STEP_SUMMARY
+          echo '        instructions="You are a helpful AI assistant."' >> $GITHUB_STEP_SUMMARY
+          echo '    )' >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload Deployment Info
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-info-${{ inputs.environment }}
+          path: deployment-info.txt
+          retention-days: 90
