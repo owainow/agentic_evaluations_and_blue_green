@@ -104,14 +104,20 @@ jobs:
           echo "deployment_name=${DEPLOYMENT_NAME}" >> $GITHUB_OUTPUT
           echo "Generated deployment name: ${DEPLOYMENT_NAME}"
       
-      - name: Get AI Services name
+      - name: Get AI Services Details
         id: ai_services
         shell: bash
         run: |
-          # Get the AI Services account name from the existing deployment
+          # Get the AI Services account name and resource ID
           AI_SERVICES_NAME=$(az cognitiveservices account list \
             --resource-group ${{ env.RESOURCE_GROUP }} \
             --query "[?kind=='AIServices'].name | [0]" \
+            -o tsv)
+          
+          AI_SERVICES_ID=$(az cognitiveservices account show \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --name ${AI_SERVICES_NAME} \
+            --query id \
             -o tsv)
           
           if [ -z "$AI_SERVICES_NAME" ]; then
@@ -120,7 +126,27 @@ jobs:
           fi
           
           echo "ai_services_name=${AI_SERVICES_NAME}" >> $GITHUB_OUTPUT
+          echo "ai_services_id=${AI_SERVICES_ID}" >> $GITHUB_OUTPUT
           echo "Found AI Services account: ${AI_SERVICES_NAME}"
+          echo "Resource ID: ${AI_SERVICES_ID}"
+      
+      - name: Grant Assistant Permissions
+        shell: bash
+        run: |
+          echo "Granting Cognitive Services OpenAI User role to service principal..."
+          
+          # Get the current service principal object ID
+          SP_OBJECT_ID=$(az ad sp show --id ${{ secrets.AZURE_CLIENT_ID }} --query id -o tsv)
+          
+          # Assign Cognitive Services OpenAI User role
+          az role assignment create \
+            --assignee-object-id ${SP_OBJECT_ID} \
+            --assignee-principal-type ServicePrincipal \
+            --role "Cognitive Services OpenAI User" \
+            --scope ${{ steps.ai_services.outputs.ai_services_id }}
+          
+          echo "✅ Permissions granted. Waiting 30 seconds for propagation..."
+          sleep 30
       
       - name: Deploy Model
         id: deploy_model
