@@ -137,47 +137,38 @@ jobs:
             TEMPLATE_FILE="infrastructure/main.standard.bicep"
           fi
           
-          # Generate unique name if not provided
-          AI_FOUNDRY_NAME="${{ inputs.ai_foundry_name }}"
-          if [ -z "$AI_FOUNDRY_NAME" ]; then
-            AI_FOUNDRY_NAME="aifoundry-${{ inputs.environment }}-$(date +%s | tail -c 6)"
+          # Generate base name from user input or default
+          BASE_NAME="${{ inputs.ai_foundry_name }}"
+          if [ -z "$BASE_NAME" ]; then
+            BASE_NAME="aif"
           fi
           
           echo "🔍 Running What-If analysis..."
           echo "This preview shows what resources will be created/modified."
           echo ""
           
-          if [ "${{ inputs.deployment_type }}" == "basic" ]; then
-            az deployment group what-if \
-              --resource-group ${{ inputs.resource_group_name }} \
-              --template-file $TEMPLATE_FILE \
-              --parameters aiFoundryName=$AI_FOUNDRY_NAME \
-                          aiProjectName=${{ inputs.ai_project_name }} \
-                          location=${{ inputs.location }} \
-                          modelDeploymentName=${{ inputs.model_deployment_name }} \
-                          modelName=${{ inputs.model_name }} \
-              --result-format FullResourcePayloads
-          else
-            az deployment group what-if \
-              --resource-group ${{ inputs.resource_group_name }} \
-              --template-file $TEMPLATE_FILE \
-              --parameters baseName="aifoundry-${{ inputs.environment }}" \
-                          location=${{ inputs.location }} \
-                          modelDeploymentName=${{ inputs.model_deployment_name }} \
-                          modelName=${{ inputs.model_name }} \
-              --result-format FullResourcePayloads
-          fi
+          az deployment group what-if \
+            --resource-group ${{ inputs.resource_group_name }} \
+            --template-file $TEMPLATE_FILE \
+            --parameters baseName="$BASE_NAME" \
+                        environment=${{ inputs.environment }} \
+                        location=${{ inputs.location }} \
+            --result-format FullResourcePayloads
 
       - name: Deploy Infrastructure
         id: deploy
         run: |
           TEMPLATE_FILE="infrastructure/main.bicep"
+          if [ "${{ inputs.deployment_type }}" == "standard" ]; then
+            TEMPLATE_FILE="infrastructure/main.standard.bicep"
+          fi
+          
           DEPLOYMENT_NAME="aifoundry-$(date +%Y%m%d-%H%M%S)"
           
-          # Generate unique name if not provided
-          AI_FOUNDRY_NAME="${{ inputs.ai_foundry_name }}"
-          if [ -z "$AI_FOUNDRY_NAME" ]; then
-            AI_FOUNDRY_NAME="aifoundry-${{ inputs.environment }}-$(date +%s | tail -c 6)"
+          # Generate base name from user input or default
+          BASE_NAME="${{ inputs.ai_foundry_name }}"
+          if [ -z "$BASE_NAME" ]; then
+            BASE_NAME="aif"
           fi
           
           echo "🚀 Deploying Azure AI Foundry infrastructure..."
@@ -185,29 +176,16 @@ jobs:
           echo "   Type: ${{ inputs.deployment_type }}"
           echo "   Resource Group: ${{ inputs.resource_group_name }}"
           echo "   Location: ${{ inputs.location }}"
-          echo "   AI Foundry Name: $AI_FOUNDRY_NAME"
+          echo "   Base Name: $BASE_NAME"
           echo ""
           
-          if [ "${{ inputs.deployment_type }}" == "basic" ]; then
-            az deployment group create \
-              --name $DEPLOYMENT_NAME \
-              --resource-group ${{ inputs.resource_group_name }} \
-              --template-file infrastructure/main.bicep \
-              --parameters aiFoundryName=$AI_FOUNDRY_NAME \
-                          aiProjectName=${{ inputs.ai_project_name }} \
-                          location=${{ inputs.location }} \
-                          modelDeploymentName=${{ inputs.model_deployment_name }} \
-                          modelName=${{ inputs.model_name }}
-          else
-            az deployment group create \
-              --name $DEPLOYMENT_NAME \
-              --resource-group ${{ inputs.resource_group_name }} \
-              --template-file infrastructure/main.standard.bicep \
-              --parameters baseName="aifoundry-${{ inputs.environment }}" \
-                          location=${{ inputs.location }} \
-                          modelDeploymentName=${{ inputs.model_deployment_name }} \
-                          modelName=${{ inputs.model_name }}
-          fi
+          az deployment group create \
+            --name $DEPLOYMENT_NAME \
+            --resource-group ${{ inputs.resource_group_name }} \
+            --template-file $TEMPLATE_FILE \
+            --parameters baseName="$BASE_NAME" \
+                        environment=${{ inputs.environment }} \
+                        location=${{ inputs.location }}
           
           echo ""
           echo "✅ Deployment completed successfully!"
@@ -222,14 +200,14 @@ jobs:
           
           echo "$OUTPUTS" | jq .
           
-          # Set outputs for next jobs
-          AI_FOUNDRY_RESOURCE_NAME=$(echo $OUTPUTS | jq -r '.aiFoundryResourceName.value')
+          # Set outputs for next jobs (updated to match new template outputs)
+          AI_HUB_NAME=$(echo $OUTPUTS | jq -r '.aiHubName.value')
           PROJECT_NAME=$(echo $OUTPUTS | jq -r '.projectName.value')
-          ENDPOINT=$(echo $OUTPUTS | jq -r '.aiFoundryEndpoint.value')
+          AI_SERVICES_ENDPOINT=$(echo $OUTPUTS | jq -r '.aiServicesEndpoint.value')
           
-          echo "ai_foundry_name=$AI_FOUNDRY_RESOURCE_NAME" >> $GITHUB_OUTPUT
+          echo "ai_foundry_name=$AI_HUB_NAME" >> $GITHUB_OUTPUT
           echo "project_name=$PROJECT_NAME" >> $GITHUB_OUTPUT
-          echo "endpoint=$ENDPOINT" >> $GITHUB_OUTPUT
+          echo "endpoint=$AI_SERVICES_ENDPOINT" >> $GITHUB_OUTPUT
 
       - name: Tag Resources
         run: |
