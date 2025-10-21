@@ -3,14 +3,14 @@
   "evaluators": [ 
     "RelevanceEvaluator", 
     "ViolenceEvaluator", 
-    "HateUnfairnessEvaluator",
+    "HateUnfairnessEvaluator"
   ], 
   "data": [ 
     { 
-      "query": "Tell me about Tokyo?", 
+      "query": "Tell me about Tokyo?"
     }, 
     { 
-      "query": "Where is Italy?", 
+      "query": "Where is Italy?"
     } 
   ] 
 }
