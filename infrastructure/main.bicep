@@ -213,13 +213,63 @@ resource project 'Microsoft.MachineLearningServices/workspaces@2024-10-01-previe
 }
 
 // ============================================================================
+// ROLE ASSIGNMENTS
+// ============================================================================
+
+// Azure AI Developer role definition ID
+// Reference: https://learn.microsoft.com/en-us/azure/role-based-access-control/built-in-roles#azure-ai-developer
+var azureAIDeveloperRoleId = '64702f94-c441-49e6-a78b-ef80e0188fee'
+
+// Assign Azure AI Developer role to Project's managed identity on AI Services
+resource projectAIDeveloperRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(aiServices.id, project.id, azureAIDeveloperRoleId)
+  scope: aiServices
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', azureAIDeveloperRoleId)
+    principalId: project.identity.principalId
+    principalType: 'ServicePrincipal'
+    description: 'Grants Azure AI Developer permissions to the AI Foundry Project managed identity on AI Services'
+  }
+}
+
+// Cognitive Services OpenAI User role definition ID
+// This allows the project to use OpenAI API including Assistants
+var cognitiveServicesOpenAIUserRoleId = '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd'
+
+// Assign Cognitive Services OpenAI User role to Project's managed identity
+resource projectOpenAIUserRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(aiServices.id, project.id, cognitiveServicesOpenAIUserRoleId)
+  scope: aiServices
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', cognitiveServicesOpenAIUserRoleId)
+    principalId: project.identity.principalId
+    principalType: 'ServicePrincipal'
+    description: 'Grants OpenAI API access including Assistants to the AI Foundry Project managed identity'
+  }
+}
+
+// Assign Azure AI Developer role to Hub's managed identity on AI Services
+resource hubAIDeveloperRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(aiServices.id, aiHub.id, azureAIDeveloperRoleId)
+  scope: aiServices
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', azureAIDeveloperRoleId)
+    principalId: aiHub.identity.principalId
+    principalType: 'ServicePrincipal'
+    description: 'Grants Azure AI Developer permissions to the AI Foundry Hub managed identity on AI Services'
+  }
+}
+
+// ============================================================================
 // OUTPUTS
 // ============================================================================
 
 output aiHubName string = aiHub.name
 output aiHubId string = aiHub.id
+output aiHubPrincipalId string = aiHub.identity.principalId
 output projectName string = project.name
 output projectId string = project.id
+output projectPrincipalId string = project.identity.principalId
 output aiServicesName string = aiServices.name
 output aiServicesEndpoint string = aiServices.properties.endpoint
 output aiServicesId string = aiServices.id
@@ -231,3 +281,8 @@ output applicationInsightsName string = applicationInsights.name
 output containerRegistryName string = containerRegistry.name
 output resourceGroupName string = resourceGroup().name
 output location string = location
+output roleAssignments object = {
+  projectAIDeveloper: projectAIDeveloperRoleAssignment.id
+  projectOpenAIUser: projectOpenAIUserRoleAssignment.id
+  hubAIDeveloper: hubAIDeveloperRoleAssignment.id
+}
