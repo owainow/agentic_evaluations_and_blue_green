@@ -211,6 +211,9 @@ resource aiServices 'Microsoft.CognitiveServices/accounts@2024-10-01' = {
       ipRules: []
       virtualNetworkRules: []
     }
+    apiProperties: {
+      statisticsEnabled: false
+    }
   }
 }
 
