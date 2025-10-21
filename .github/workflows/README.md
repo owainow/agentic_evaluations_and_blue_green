@@ -17,7 +17,8 @@ Manually deploy Azure AI Foundry infrastructure with full configuration options.
 - ✅ Customize AI Foundry and project names
 - ✅ Select model and deployment settings
 - ✅ BICEP validation before deployment
-- ✅ What-If analysis
+- ✅ What-If analysis (shows resources that will be created)
+- ✅ Automatic resource group creation
 - ✅ Resource tagging
 - ✅ Post-deployment verification
 - ✅ Deployment summary with quick links
@@ -136,16 +137,22 @@ az ad app federated-credential list --id $CLIENT_ID --query "[].{Name:name, Subj
 
 ### 3. Add Secrets to GitHub
 
-#### Option A: Using GitHub CLI (in Azure Cloud Shell)
+#### Option A: Using GitHub CLI (Recommended)
+
+If you have GitHub CLI installed locally (not available in Azure Cloud Shell):
 
 ```bash
-# Install GitHub CLI if not available (Azure Cloud Shell may not have it)
-# You can also do this from your local machine
+# Copy these values from step 1 output
+export CLIENT_ID="your-client-id"
+export TENANT_ID="your-tenant-id"
+export SUBSCRIPTION_ID="your-subscription-id"
+export REPO_OWNER="owainow"
+export REPO_NAME="agentic_evaluations_and_blue_green"
 
 # Login to GitHub
 gh auth login
 
-# Set the secrets (use values from step 1)
+# Set the secrets
 gh secret set AZURE_CLIENT_ID --body "$CLIENT_ID" --repo $REPO_OWNER/$REPO_NAME
 gh secret set AZURE_TENANT_ID --body "$TENANT_ID" --repo $REPO_OWNER/$REPO_NAME
 gh secret set AZURE_SUBSCRIPTION_ID --body "$SUBSCRIPTION_ID" --repo $REPO_OWNER/$REPO_NAME

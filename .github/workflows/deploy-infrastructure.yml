@@ -100,41 +100,6 @@ jobs:
           az bicep build --file infrastructure/main.standard.bicep
           echo "✅ Standard BICEP template is valid"
 
-      - name: What-If Analysis
-        run: |
-          TEMPLATE_FILE="infrastructure/main.bicep"
-          if [ "${{ inputs.deployment_type }}" == "standard" ]; then
-            TEMPLATE_FILE="infrastructure/main.standard.bicep"
-          fi
-          
-          # Generate unique name if not provided
-          AI_FOUNDRY_NAME="${{ inputs.ai_foundry_name }}"
-          if [ -z "$AI_FOUNDRY_NAME" ]; then
-            AI_FOUNDRY_NAME="aifoundry-${{ inputs.environment }}-$(date +%s | tail -c 6)"
-          fi
-          
-          echo "🔍 Running What-If analysis..."
-          if [ "${{ inputs.deployment_type }}" == "basic" ]; then
-            az deployment group what-if \
-              --resource-group ${{ inputs.resource_group_name }} \
-              --template-file $TEMPLATE_FILE \
-              --parameters aiFoundryName=$AI_FOUNDRY_NAME \
-                          aiProjectName=${{ inputs.ai_project_name }} \
-                          location=${{ inputs.location }} \
-                          modelDeploymentName=${{ inputs.model_deployment_name }} \
-                          modelName=${{ inputs.model_name }} \
-              --no-pretty-print
-          else
-            az deployment group what-if \
-              --resource-group ${{ inputs.resource_group_name }} \
-              --template-file $TEMPLATE_FILE \
-              --parameters baseName="aifoundry-${{ inputs.environment }}" \
-                          location=${{ inputs.location }} \
-                          modelDeploymentName=${{ inputs.model_deployment_name }} \
-                          modelName=${{ inputs.model_name }} \
-              --no-pretty-print
-          fi
-
   deploy:
     name: Deploy to Azure
     runs-on: ubuntu-latest
@@ -164,6 +129,45 @@ jobs:
             --name ${{ inputs.resource_group_name }} \
             --location ${{ inputs.location }} \
             --tags Environment=${{ inputs.environment }} DeployedBy=GitHubActions
+
+      - name: What-If Analysis
+        continue-on-error: true
+        run: |
+          TEMPLATE_FILE="infrastructure/main.bicep"
+          if [ "${{ inputs.deployment_type }}" == "standard" ]; then
+            TEMPLATE_FILE="infrastructure/main.standard.bicep"
+          fi
+          
+          # Generate unique name if not provided
+          AI_FOUNDRY_NAME="${{ inputs.ai_foundry_name }}"
+          if [ -z "$AI_FOUNDRY_NAME" ]; then
+            AI_FOUNDRY_NAME="aifoundry-${{ inputs.environment }}-$(date +%s | tail -c 6)"
+          fi
+          
+          echo "🔍 Running What-If analysis..."
+          echo "This preview shows what resources will be created/modified."
+          echo ""
+          
+          if [ "${{ inputs.deployment_type }}" == "basic" ]; then
+            az deployment group what-if \
+              --resource-group ${{ inputs.resource_group_name }} \
+              --template-file $TEMPLATE_FILE \
+              --parameters aiFoundryName=$AI_FOUNDRY_NAME \
+                          aiProjectName=${{ inputs.ai_project_name }} \
+                          location=${{ inputs.location }} \
+                          modelDeploymentName=${{ inputs.model_deployment_name }} \
+                          modelName=${{ inputs.model_name }} \
+              --result-format FullResourcePayloads
+          else
+            az deployment group what-if \
+              --resource-group ${{ inputs.resource_group_name }} \
+              --template-file $TEMPLATE_FILE \
+              --parameters baseName="aifoundry-${{ inputs.environment }}" \
+                          location=${{ inputs.location }} \
+                          modelDeploymentName=${{ inputs.model_deployment_name }} \
+                          modelName=${{ inputs.model_name }} \
+              --result-format FullResourcePayloads
+          fi
 
       - name: Deploy Infrastructure
         id: deploy
