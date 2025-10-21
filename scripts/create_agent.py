@@ -36,9 +36,9 @@ def create_agent(
         
         # Create project client
         print(f"Connecting to project: {project_endpoint}")
-        project_client = AIProjectClient.from_connection_string(
-            credential=credential,
-            conn_str=project_endpoint
+        project_client = AIProjectClient(
+            endpoint=project_endpoint,
+            credential=credential
         )
         
         # Create the agent
