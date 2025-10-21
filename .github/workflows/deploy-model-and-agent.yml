@@ -211,11 +211,13 @@ jobs:
             exit 1
           fi
           
-          # Get the first project (or you could filter by name)
-          PROJECT_NAME=$(echo "$PROJECTS" | jq -r '.[0].name')
+          # Get the first project name (format: "parent/projectName", we need just "projectName")
+          PROJECT_FULL_NAME=$(echo "$PROJECTS" | jq -r '.[0].name')
+          # Extract just the project name after the slash
+          PROJECT_NAME=$(echo "$PROJECT_FULL_NAME" | sed 's|.*/||')
           
           if [ -z "$PROJECT_NAME" ] || [ "$PROJECT_NAME" == "null" ]; then
-            echo "Error: Could not extract project name"
+            echo "Error: Could not extract project name from: ${PROJECT_FULL_NAME}"
             exit 1
           fi
           
