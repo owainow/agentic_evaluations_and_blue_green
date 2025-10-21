@@ -175,71 +175,58 @@ jobs:
         id: project_details
         shell: bash
         run: |
-          # Query for AI Foundry Hub to get the discovery URL
-          echo "Searching for AI Foundry Hub and Project in resource group: ${{ env.RESOURCE_GROUP }}"
+          # Query for AI Foundry (new architecture using CognitiveServices)
+          echo "Searching for AI Foundry in resource group: ${{ env.RESOURCE_GROUP }}"
           
-          # Get the AI Hub (kind=hub)
-          HUB_DATA=$(az resource list \
+          # Get the AI Foundry resource (kind=AIServices with allowProjectManagement=true)
+          AI_FOUNDRY_DATA=$(az cognitiveservices account list \
             --resource-group ${{ env.RESOURCE_GROUP }} \
-            --resource-type "Microsoft.MachineLearningServices/workspaces" \
-            --query "[?kind=='hub' || kind=='Hub'] | [0]" \
+            --query "[?kind=='AIServices' && properties.allowProjectManagement==\`true\`] | [0]" \
             -o json)
           
-          if [ "$HUB_DATA" == "null" ] || [ -z "$HUB_DATA" ]; then
-            echo "Error: No AI Foundry Hub found in resource group ${{ env.RESOURCE_GROUP }}"
-            echo "Available workspaces:"
-            az resource list --resource-group ${{ env.RESOURCE_GROUP }} --resource-type "Microsoft.MachineLearningServices/workspaces" --query "[].{Name:name, Kind:kind}" -o table
+          if [ "$AI_FOUNDRY_DATA" == "null" ] || [ -z "$AI_FOUNDRY_DATA" ]; then
+            echo "Error: No AI Foundry resource found in resource group ${{ env.RESOURCE_GROUP }}"
+            echo "Available AI Services accounts:"
+            az cognitiveservices account list --resource-group ${{ env.RESOURCE_GROUP }} --query "[].{Name:name, Kind:kind, AllowProjectManagement:properties.allowProjectManagement}" -o table
             exit 1
           fi
           
-          HUB_NAME=$(echo "$HUB_DATA" | jq -r '.name')
+          AI_FOUNDRY_NAME=$(echo "$AI_FOUNDRY_DATA" | jq -r '.name')
+          AI_FOUNDRY_ENDPOINT=$(echo "$AI_FOUNDRY_DATA" | jq -r '.properties.endpoint')
           
-          # Get full Hub details including discoveryUrl
-          HUB_FULL=$(az resource show \
+          echo "✅ Found AI Foundry: ${AI_FOUNDRY_NAME}"
+          echo "   Endpoint: ${AI_FOUNDRY_ENDPOINT}"
+          
+          # Get the AI Foundry Project (child resource)
+          # List all projects under this AI Foundry resource
+          PROJECTS=$(az resource list \
             --resource-group ${{ env.RESOURCE_GROUP }} \
-            --resource-type "Microsoft.MachineLearningServices/workspaces" \
-            --name "${HUB_NAME}" \
+            --resource-type "Microsoft.CognitiveServices/accounts/projects" \
+            --query "[?starts_with(id, '/subscriptions/${{ env.AZURE_SUBSCRIPTION_ID }}/resourceGroups/${{ env.RESOURCE_GROUP }}/providers/Microsoft.CognitiveServices/accounts/${AI_FOUNDRY_NAME}/')]" \
             -o json)
           
-          DISCOVERY_URL=$(echo "$HUB_FULL" | jq -r '.properties.discoveryUrl')
-          
-          # Extract workspace GUID from discovery URL
-          # Format: https://12345678-1234-1234-1234-123456789012.workspace.eastus.api.azureml.ms/...
-          WORKSPACE_GUID=$(echo "$DISCOVERY_URL" | sed -E 's|https://([^.]+)\..*|\1|')
-          
-          if [ -z "$WORKSPACE_GUID" ] || [ "$WORKSPACE_GUID" == "null" ]; then
-            echo "Error: Could not extract workspace GUID from discovery URL: $DISCOVERY_URL"
+          if [ "$PROJECTS" == "[]" ] || [ -z "$PROJECTS" ]; then
+            echo "Error: No projects found under AI Foundry resource ${AI_FOUNDRY_NAME}"
             exit 1
           fi
           
-          # Get the AI Foundry Project (kind=project)
-          PROJECT_DATA=$(az resource list \
-            --resource-group ${{ env.RESOURCE_GROUP }} \
-            --resource-type "Microsoft.MachineLearningServices/workspaces" \
-            --query "[?kind=='project' || kind=='Project'] | [0]" \
-            -o json)
+          # Get the first project (or you could filter by name)
+          PROJECT_NAME=$(echo "$PROJECTS" | jq -r '.[0].name')
           
-          if [ "$PROJECT_DATA" == "null" ] || [ -z "$PROJECT_DATA" ]; then
-            echo "Error: No AI Foundry Project found in resource group ${{ env.RESOURCE_GROUP }}"
+          if [ -z "$PROJECT_NAME" ] || [ "$PROJECT_NAME" == "null" ]; then
+            echo "Error: Could not extract project name"
             exit 1
           fi
-          
-          PROJECT_NAME=$(echo "$PROJECT_DATA" | jq -r '.name')
           
           # Construct the Agent Service endpoint
-          # Format: https://{hub-name}.services.ai.azure.com/api/projects/{project-name}
-          # The AIFoundryResourceName in the endpoint is the Hub name, not the workspace GUID
-          PROJECT_ENDPOINT="https://${HUB_NAME}.services.ai.azure.com/api/projects/${PROJECT_NAME}"
+          # Format: https://{ai-foundry-name}.services.ai.azure.com/api/projects/{project-name}
+          PROJECT_ENDPOINT="https://${AI_FOUNDRY_NAME}.services.ai.azure.com/api/projects/${PROJECT_NAME}"
           
           echo "project_name=${PROJECT_NAME}" >> $GITHUB_OUTPUT
           echo "project_endpoint=${PROJECT_ENDPOINT}" >> $GITHUB_OUTPUT
-          echo "hub_name=${HUB_NAME}" >> $GITHUB_OUTPUT
-          echo "workspace_guid=${WORKSPACE_GUID}" >> $GITHUB_OUTPUT
+          echo "ai_foundry_name=${AI_FOUNDRY_NAME}" >> $GITHUB_OUTPUT
           
-          echo "✅ Found AI Foundry Hub: ${HUB_NAME}"
           echo "✅ Found AI Foundry Project: ${PROJECT_NAME}"
-          echo "   Workspace GUID: ${WORKSPACE_GUID}"
-          echo "   Discovery URL: ${DISCOVERY_URL}"
           echo "   Agent Service Endpoint: ${PROJECT_ENDPOINT}"
       
       - name: Set up Python
