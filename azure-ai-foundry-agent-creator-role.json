@@ -1,13 +1,15 @@
 {
   "Name": "Azure AI Foundry Agent Creator",
   "IsCustom": true,
-  "Description": "Can create AI agents in Azure AI Foundry projects",
+  "Description": "Can create AI agents and run evaluations in Azure AI Foundry projects",
   "Actions": [
     "Microsoft.CognitiveServices/accounts/read"
   ],
   "DataActions": [
     "Microsoft.CognitiveServices/accounts/AIServices/agents/write",
-    "Microsoft.CognitiveServices/accounts/AIServices/agents/read"
+    "Microsoft.CognitiveServices/accounts/AIServices/agents/read",
+    "Microsoft.CognitiveServices/accounts/AIServices/assets/write",
+    "Microsoft.CognitiveServices/accounts/AIServices/assets/read"
   ],
   "NotDataActions": [],
   "AssignableScopes": [
