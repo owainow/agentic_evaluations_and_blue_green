@@ -8,9 +8,53 @@ import os
 import sys
 import json
 import time
+import requests
 from typing import List, Dict, Any
 from azure.ai.projects import AIProjectClient
 from azure.identity import DefaultAzureCredential
+
+
+def call_azure_function(function_name: str, parameters: dict, function_app_url: str) -> str:
+    """
+    Call an Azure Function with the given parameters
+    
+    Args:
+        function_name: Name of the function to call (get_weather or get_news_articles)
+        parameters: Dictionary of parameters to pass to the function
+        function_app_url: Base URL of the Function App
+    
+    Returns:
+        JSON string response from the function
+    """
+    try:
+        url = f"{function_app_url}/api/{function_name}"
+        
+        # Make the HTTP request to the Azure Function
+        response = requests.post(
+            url,
+            json=parameters,
+            headers={'Content-Type': 'application/json'},
+            timeout=30
+        )
+        
+        if response.status_code == 200:
+            return response.text
+        else:
+            error_result = {
+                "error": f"Function call failed with status {response.status_code}",
+                "details": response.text,
+                "function": function_name,
+                "parameters": parameters
+            }
+            return json.dumps(error_result)
+            
+    except Exception as e:
+        error_result = {
+            "error": f"Failed to call Azure Function: {str(e)}",
+            "function": function_name,
+            "parameters": parameters
+        }
+        return json.dumps(error_result)
 
 
 def validate_json_response(response_text: str) -> Dict[str, Any]:
@@ -64,7 +108,8 @@ def call_agent_and_validate(
     project_client: AIProjectClient,
     agent_id: str,
     query: str,
-    expected_type: str = "any"
+    expected_type: str = "any",
+    function_app_url: str = None
 ) -> Dict[str, Any]:
     """
     Call agent with a query and validate the JSON response
@@ -74,13 +119,20 @@ def call_agent_and_validate(
         agent_id: Agent ID to test
         query: Query to send
         expected_type: Expected response type (weather, news, rejection, any)
+        function_app_url: URL of the Azure Function App
     
     Returns:
         dict with test results
     """
-    # Import functions for tool calling
-    sys.path.insert(0, os.path.dirname(__file__))
-    from create_agent import get_weather, get_news_articles
+    if not function_app_url:
+        function_app_url = os.getenv('FUNCTION_APP_URL')
+        if not function_app_url:
+            return {
+                "query": query,
+                "expected_type": expected_type,
+                "success": False,
+                "error": "FUNCTION_APP_URL environment variable not set"
+            }
     
     try:
         # Create thread
@@ -99,64 +151,86 @@ def call_agent_and_validate(
             agent_id=agent_id
         )
         
-        # Poll for completion with function calling
-        max_iterations = 30
+        # Poll for completion - agent will call Azure Functions automatically
+        max_iterations = 60  # Increased timeout for Azure Functions
         iteration = 0
         function_calls_made = []
         
         while run.status in ["queued", "in_progress", "requires_action"] and iteration < max_iterations:
-            time.sleep(1)
-            run = project_client.agents.runs.get(thread_id=thread.id, run_id=run.id)
+            time.sleep(2)
+            try:
+                run = project_client.agents.runs.retrieve(
+                    thread_id=thread.id,
+                    run_id=run.id
+                )
+            except AttributeError:
+                # Fallback to .get() if retrieve doesn't exist
+                run = project_client.agents.runs.get(thread_id=thread.id, run_id=run.id)
+            
             iteration += 1
             
+            # Log status for debugging
+            if iteration % 5 == 0:  # Log every 10 seconds
+                print(f"    Status: {run.status} (waited {iteration * 2}s)")
+            
+            # If requires_action, handle Azure Function calls
             if run.status == "requires_action":
-                tool_calls = run.required_action.submit_tool_outputs.tool_calls
-                tool_outputs = []
-                
-                for tool_call in tool_calls:
-                    if tool_call.function.name == "get_weather":
+                print(f"    ⚠️ Agent making function calls...")
+                if hasattr(run, 'required_action') and run.required_action:
+                    tool_calls = run.required_action.submit_tool_outputs.tool_calls
+                    tool_outputs = []
+                    
+                    for tool_call in tool_calls:
+                        function_calls_made.append(tool_call.function.name)
+                        print(f"    📞 Calling: {tool_call.function.name}")
+                        
+                        # Parse function arguments
                         args = json.loads(tool_call.function.arguments)
-                        function_calls_made.append("get_weather")
-                        output = get_weather(
-                            location=args.get("location", ""),
-                            unit=args.get("unit", "celsius")
+                        
+                        # Call the Azure Function
+                        output = call_azure_function(
+                            tool_call.function.name,
+                            args,
+                            function_app_url
                         )
+                        
                         tool_outputs.append({
                             "tool_call_id": tool_call.id,
                             "output": output
                         })
-                    elif tool_call.function.name == "get_news_articles":
-                        args = json.loads(tool_call.function.arguments)
-                        function_calls_made.append("get_news_articles")
-                        output = get_news_articles(
-                            topic=args.get("topic", ""),
-                            max_articles=args.get("max_articles", 5)
-                        )
-                        tool_outputs.append({
-                            "tool_call_id": tool_call.id,
-                            "output": output
-                        })
-                
-                run = project_client.agents.runs.submit_tool_outputs(
-                    thread_id=thread.id,
-                    run_id=run.id,
-                    tool_outputs=tool_outputs
-                )
+                    
+                    # Submit tool outputs back to the agent
+                    run = project_client.agents.runs.submit_tool_outputs(
+                        thread_id=thread.id,
+                        run_id=run.id,
+                        tool_outputs=tool_outputs
+                    )
         
         if iteration >= max_iterations:
             return {
                 "query": query,
                 "expected_type": expected_type,
                 "success": False,
-                "error": "Timeout",
-                "function_calls": function_calls_made
+                "error": f"Timeout after {max_iterations * 2} seconds",
+                "function_calls": function_calls_made,
+                "final_status": run.status
             }
         
         # Get response
-        messages = project_client.agents.messages.list(thread_id=thread.id)
+        try:
+            messages = project_client.agents.messages.list(
+                thread_id=thread.id,
+                order="asc"
+            )
+        except TypeError:
+            # Fallback if order parameter not supported
+            messages = project_client.agents.messages.list(thread_id=thread.id)
+        
         response_text = None
         
-        for msg in messages:
+        # Find the assistant's response
+        message_list = messages.data if hasattr(messages, 'data') else messages
+        for msg in message_list:
             if msg.role == "assistant" and msg.content:
                 for content_item in msg.content:
                     if hasattr(content_item, 'text') and hasattr(content_item.text, 'value'):
@@ -203,7 +277,8 @@ def call_agent_and_validate(
 def run_json_validation_tests(
     project_client: AIProjectClient,
     agent_id: str,
-    test_cases: List[Dict[str, str]]
+    test_cases: List[Dict[str, str]],
+    function_app_url: str = None
 ) -> List[Dict[str, Any]]:
     """
     Run all JSON validation tests
@@ -224,7 +299,8 @@ def run_json_validation_tests(
             project_client=project_client,
             agent_id=agent_id,
             query=query,
-            expected_type=expected_type
+            expected_type=expected_type,
+            function_app_url=function_app_url
         )
         
         result["test_number"] = i
@@ -342,6 +418,7 @@ def main():
     project_endpoint = os.environ.get('PROJECT_ENDPOINT')
     agent_id = os.environ.get('AGENT_ID')
     agent_name = os.environ.get('AGENT_NAME', 'Weather Agent')
+    function_app_url = os.environ.get('FUNCTION_APP_URL')
     
     if not project_endpoint:
         print("ERROR: PROJECT_ENDPOINT environment variable required")
@@ -351,11 +428,16 @@ def main():
         print("ERROR: AGENT_ID environment variable required")
         sys.exit(1)
     
+    if not function_app_url:
+        print("ERROR: FUNCTION_APP_URL environment variable required")
+        sys.exit(1)
+    
     print("="*70)
     print("JSON RESPONSE VALIDATION")
     print("="*70)
     print(f"Agent ID: {agent_id}")
     print(f"Agent Name: {agent_name}")
+    print(f"Function App: {function_app_url}")
     print("="*70)
     
     # Define test cases
@@ -379,7 +461,7 @@ def main():
     
     # Run tests
     print(f"\nRunning {len(test_cases)} JSON validation tests...\n")
-    results = run_json_validation_tests(project_client, agent_id, test_cases)
+    results = run_json_validation_tests(project_client, agent_id, test_cases, function_app_url)
     
     # Generate summary
     generate_github_summary(results, agent_id, agent_name)

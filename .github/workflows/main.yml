@@ -20,6 +20,10 @@ on:
         required: false
         type: string
         default: 'basic_test.json'
+      function_app_url:
+        description: 'Azure Function App URL'
+        required: false
+        type: string
   workflow_call:
     inputs:
       project_endpoint:
@@ -39,6 +43,10 @@ on:
         required: false
         type: string
         default: 'basic_test.json'
+      function_app_url:
+        description: 'Azure Function App URL'
+        required: false
+        type: string
     secrets:
       AZURE_CLIENT_ID:
         required: true
@@ -108,6 +116,7 @@ jobs:
           PROJECT_ENDPOINT: ${{ inputs.project_endpoint }}
           AGENT_ID: ${{ inputs.agent_id }}
           AGENT_NAME: 'Weather News Agent'
+          FUNCTION_APP_URL: ${{ inputs.function_app_url }}
         run: |
           python scripts/validate_json_responses.py
 

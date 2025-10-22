@@ -436,6 +436,7 @@ jobs:
       deployment_name: ${{ needs.deploy-model-and-agent.outputs.deployment_name }}
       agent_id: ${{ needs.deploy-model-and-agent.outputs.agent_id }}
       data_file: 'weather_test.json'
+      function_app_url: ${{ needs.deploy-model-and-agent.outputs.function_app_url }}
     secrets:
       AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
       AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}

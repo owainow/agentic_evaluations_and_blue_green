@@ -265,7 +265,7 @@ def test_agent_with_azure_functions(project_client, agent_id, test_query="What's
         print(f"Sent message: {message.id}")
         
         # Run the agent
-        run = project_client.agents.threads.runs.create(
+        run = project_client.agents.runs.create(
             thread_id=thread.id,
             assistant_id=agent_id
         )
@@ -279,7 +279,7 @@ def test_agent_with_azure_functions(project_client, agent_id, test_query="What's
         while run.status in ["queued", "in_progress", "requires_action"] and wait_time < max_wait_time:
             time.sleep(poll_interval)
             wait_time += poll_interval
-            run = project_client.agents.threads.runs.retrieve(
+            run = project_client.agents.runs.retrieve(
                 thread_id=thread.id,
                 run_id=run.id
             )
