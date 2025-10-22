@@ -74,6 +74,8 @@ jobs:
       ai_foundry_name: ${{ steps.deploy.outputs.ai_foundry_name }}
       project_name: ${{ steps.deploy.outputs.project_name }}
       endpoint: ${{ steps.deploy.outputs.endpoint }}
+      function_app_name: ${{ steps.deploy.outputs.function_app_name }}
+      function_app_url: ${{ steps.deploy.outputs.function_app_url }}
       resource_group: ${{ inputs.resource_group_name }}
 
     steps:
@@ -198,10 +200,14 @@ jobs:
           AI_FOUNDRY_NAME=$(echo $OUTPUTS | jq -r '.aiFoundryName.value')
           PROJECT_NAME=$(echo $OUTPUTS | jq -r '.projectName.value')
           PROJECT_ENDPOINT=$(echo $OUTPUTS | jq -r '.projectEndpoint.value')
+          FUNCTION_APP_NAME=$(echo $OUTPUTS | jq -r '.functionAppName.value')
+          FUNCTION_APP_URL=$(echo $OUTPUTS | jq -r '.functionAppUrl.value')
           
           echo "ai_foundry_name=$AI_FOUNDRY_NAME" >> $GITHUB_OUTPUT
           echo "project_name=$PROJECT_NAME" >> $GITHUB_OUTPUT
           echo "endpoint=$PROJECT_ENDPOINT" >> $GITHUB_OUTPUT
+          echo "function_app_name=$FUNCTION_APP_NAME" >> $GITHUB_OUTPUT
+          echo "function_app_url=$FUNCTION_APP_URL" >> $GITHUB_OUTPUT
 
       - name: Verify Deployment
         run: |
@@ -226,10 +232,80 @@ jobs:
           echo "✅ Verification complete!"
           echo "🔗 Project Endpoint: ${{ steps.deploy.outputs.endpoint }}"
 
+  deploy-functions:
+    name: Deploy Azure Functions
+    runs-on: ubuntu-latest
+    needs: deploy
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Install Azure Functions Core Tools
+        run: |
+          curl https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > microsoft.gpg
+          sudo mv microsoft.gpg /etc/apt/trusted.gpg.d/microsoft.gpg
+          sudo sh -c 'echo "deb [arch=amd64] https://packages.microsoft.com/repos/microsoft-ubuntu-$(lsb_release -cs)-prod $(lsb_release -cs) main" > /etc/apt/sources.list.d/dotnetdev.list'
+          sudo apt-get update
+          sudo apt-get install azure-functions-core-tools-4
+
+      - name: Install Function Dependencies
+        run: |
+          cd functions
+          pip install -r requirements.txt
+
+      - name: Deploy Functions to Azure
+        run: |
+          echo "🚀 Deploying functions to: ${{ needs.deploy.outputs.function_app_name }}"
+          cd functions
+          func azure functionapp publish ${{ needs.deploy.outputs.function_app_name }} --python
+
+      - name: Test Function Deployment
+        run: |
+          echo "🧪 Testing deployed functions..."
+          FUNCTION_URL="${{ needs.deploy.outputs.function_app_url }}"
+          
+          # Wait a moment for functions to be ready
+          echo "Waiting 30 seconds for functions to initialize..."
+          sleep 30
+          
+          # Test weather function
+          echo "Testing weather function..."
+          curl -X POST "$FUNCTION_URL/api/get_weather" \
+            -H "Content-Type: application/json" \
+            -d '{"location": "London", "unit": "celsius"}' \
+            --max-time 30 \
+            --retry 3 \
+            --retry-delay 5 \
+            --fail --show-error || echo "❌ Weather function test failed"
+          
+          # Test news function  
+          echo "Testing news function..."
+          curl -X POST "$FUNCTION_URL/api/get_news_articles" \
+            -H "Content-Type: application/json" \
+            -d '{"topic": "technology", "max_articles": 3}' \
+            --max-time 30 \
+            --retry 3 \
+            --retry-delay 5 \
+            --fail --show-error || echo "❌ News function test failed"
+          
+          echo "✅ Function deployment testing complete!"
+
   post-deployment:
     name: Post-Deployment Steps
     runs-on: ubuntu-latest
-    needs: deploy
+    needs: [deploy, deploy-functions]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -247,6 +323,8 @@ jobs:
           echo "AI_FOUNDRY_NAME=${{ needs.deploy.outputs.ai_foundry_name }}" >> deployment-info.txt
           echo "PROJECT_NAME=${{ needs.deploy.outputs.project_name }}" >> deployment-info.txt
           echo "ENDPOINT=${{ needs.deploy.outputs.endpoint }}" >> deployment-info.txt
+          echo "FUNCTION_APP_NAME=${{ needs.deploy.outputs.function_app_name }}" >> deployment-info.txt
+          echo "FUNCTION_APP_URL=${{ needs.deploy.outputs.function_app_url }}" >> deployment-info.txt
           echo "RESOURCE_GROUP=${{ needs.deploy.outputs.resource_group }}" >> deployment-info.txt
           echo "ENVIRONMENT=${{ inputs.environment }}" >> deployment-info.txt
           
@@ -267,6 +345,8 @@ jobs:
           echo "| AI Foundry Name | \`${{ needs.deploy.outputs.ai_foundry_name }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| Project Name | \`${{ needs.deploy.outputs.project_name }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| Project Endpoint | \`${{ needs.deploy.outputs.endpoint }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Function App Name | \`${{ needs.deploy.outputs.function_app_name }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Function App URL | \`${{ needs.deploy.outputs.function_app_url }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "## 🔗 Quick Links" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -278,7 +358,14 @@ jobs:
           echo "1. Visit [Azure AI Foundry](https://ai.azure.com)" >> $GITHUB_STEP_SUMMARY
           echo "2. Select project: **${{ needs.deploy.outputs.project_name }}**" >> $GITHUB_STEP_SUMMARY
           echo "3. Deploy a model (e.g., gpt-4o)" >> $GITHUB_STEP_SUMMARY
-          echo "4. Start building agents!" >> $GITHUB_STEP_SUMMARY
+          echo "4. Create agents using the deployed functions!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## ⚡ Deployed Functions" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Your Azure Functions are now deployed and ready to use:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Weather Function**: \`${{ needs.deploy.outputs.function_app_url }}/api/get_weather\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **News Function**: \`${{ needs.deploy.outputs.function_app_url }}/api/get_news_articles\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "## 🤖 Create Your First Agent" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
