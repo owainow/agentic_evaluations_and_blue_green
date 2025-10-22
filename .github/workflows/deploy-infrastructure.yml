@@ -265,7 +265,7 @@ jobs:
           cd functions
           pip install -r requirements.txt
 
-      - name: Deploy Functions to Azure
+      - name: Deploy Functions
         run: |
           echo "🚀 Deploying functions to: ${{ needs.deploy.outputs.function_app_name }}"
           cd functions

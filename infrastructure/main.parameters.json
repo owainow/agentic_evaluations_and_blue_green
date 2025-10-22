@@ -2,32 +2,14 @@
   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
   "contentVersion": "1.0.0.0",
   "parameters": {
-    "aiFoundryName": {
-      "value": "aifoundry-dev-001"
+    "baseName": {
+      "value": "aif"
     },
-    "aiProjectName": {
-      "value": "agent-project-001"
+    "environment": {
+      "value": "dev"
     },
-    "enableAgents": {
-      "value": true
-    },
-    "modelDeploymentName": {
-      "value": "gpt-4o"
-    },
-    "modelName": {
-      "value": "gpt-4o"
-    },
-    "modelVersion": {
-      "value": "2024-11-20"
-    },
-    "modelFormat": {
-      "value": "OpenAI"
-    },
-    "deploymentSkuName": {
-      "value": "Standard"
-    },
-    "deploymentCapacity": {
-      "value": 10
+    "functionAppName": {
+      "value": "aif-func-dev-mf77j5"
     }
   }
 }

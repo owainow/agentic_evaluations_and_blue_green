@@ -213,8 +213,8 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
       APPLICATIONINSIGHTS_INSTRUMENTATIONKEY: applicationInsights.properties.InstrumentationKey
       APPLICATIONINSIGHTS_AUTHENTICATION_STRING: 'ClientId=${userAssignedIdentity.properties.clientId};Authorization=AAD'
       PYTHON_ISOLATE_WORKER_DEPENDENCIES: '1'
-      ENABLE_ORYX_BUILD: 'true'
-      SCM_DO_BUILD_DURING_DEPLOYMENT: 'true'
+      // Note: ENABLE_ORYX_BUILD and SCM_DO_BUILD_DURING_DEPLOYMENT are not supported in Flex Consumption
+      // Build process is handled by the function app deployment command instead
     }
   }
 }
