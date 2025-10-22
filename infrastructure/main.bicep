@@ -92,7 +92,7 @@ resource aiProject 'Microsoft.CognitiveServices/accounts/projects@2025-04-01-pre
 // STORAGE ACCOUNT (Required for Azure Functions)
 // ============================================================================
 
-resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
+resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {
   name: '${baseName}st${environment}${uniqueSuffix}'
   location: location
   tags: tags
@@ -101,14 +101,42 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
   }
   kind: 'StorageV2'
   properties: {
-    supportsHttpsTrafficOnly: true
-    minimumTlsVersion: 'TLS1_2'
+    accessTier: 'Hot'
     allowBlobPublicAccess: false
+    allowSharedKeyAccess: false // Disable shared key access for security
+    dnsEndpointType: 'Standard'
+    minimumTlsVersion: 'TLS1_2'
     networkAcls: {
-      defaultAction: 'Allow'
       bypass: 'AzureServices'
+      defaultAction: 'Allow'
+    }
+    publicNetworkAccess: 'Enabled'
+  }
+  
+  resource blobServices 'blobServices' = {
+    name: 'default'
+    properties: {
+      deleteRetentionPolicy: {}
+    }
+    
+    resource deploymentContainer 'containers' = {
+      name: 'app-package-${take(baseName, 32)}-${take(uniqueSuffix, 7)}'
+      properties: {
+        publicAccess: 'None'
+      }
     }
   }
+}
+
+// ============================================================================
+// MANAGED IDENTITY (for Function App)
+// ============================================================================
+// User-assigned managed identity is recommended for Flex Consumption
+
+resource userAssignedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
+  name: '${baseName}-identity-${environment}-${uniqueSuffix}'
+  location: location
+  tags: tags
 }
 
 // ============================================================================
@@ -116,13 +144,14 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
 // ============================================================================
 // Using Flex Consumption plan - no "Dynamic VMs" quota needed, better performance
 
-resource appServicePlan 'Microsoft.Web/serverfarms@2023-12-01' = {
+resource appServicePlan 'Microsoft.Web/serverfarms@2024-04-01' = {
   name: '${baseName}-asp-${environment}-${uniqueSuffix}'
   location: location
   tags: tags
+  kind: 'functionapp'
   sku: {
-    name: 'FC1'
     tier: 'FlexConsumption'
+    name: 'FC1'
   }
   properties: {
     reserved: true // Required for Linux
@@ -133,7 +162,7 @@ resource appServicePlan 'Microsoft.Web/serverfarms@2023-12-01' = {
 // FUNCTION APP (Agent Tool Functions - Flex Consumption)
 // ============================================================================
 
-resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
+resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
   name: functionAppName != '' ? functionAppName : '${baseName}-func-${environment}-${uniqueSuffix}'
   location: location
   tags: union(tags, {
@@ -141,19 +170,25 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
   })
   kind: 'functionapp,linux'
   identity: {
-    type: 'SystemAssigned'
+    type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${userAssignedIdentity.id}': {}
+    }
   }
   properties: {
     serverFarmId: appServicePlan.id
     httpsOnly: true
-    reserved: true
+    siteConfig: {
+      minTlsVersion: '1.2'
+    }
     functionAppConfig: {
       deployment: {
         storage: {
           type: 'blobContainer'
-          value: '${storageAccount.properties.primaryEndpoints.blob}deployments'
+          value: '${storageAccount.properties.primaryEndpoints.blob}${storageAccount::blobServices::deploymentContainer.name}'
           authentication: {
-            type: 'SystemAssignedIdentity'
+            type: 'UserAssignedIdentity'
+            userAssignedIdentityResourceId: userAssignedIdentity.id
           }
         }
       }
@@ -166,53 +201,20 @@ resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
         version: '3.11'
       }
     }
-    siteConfig: {
-      linuxFxVersion: 'PYTHON|3.11'
-      appSettings: [
-        {
-          name: 'AzureWebJobsStorage__accountName'
-          value: storageAccount.name
-        }
-        {
-          name: 'AzureWebJobsStorage__credential'
-          value: 'managedidentity'
-        }
-        {
-          name: 'FUNCTIONS_EXTENSION_VERSION'
-          value: '~4'
-        }
-        {
-          name: 'FUNCTIONS_WORKER_RUNTIME'
-          value: 'python'
-        }
-        {
-          name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
-          value: applicationInsights.properties.ConnectionString
-        }
-        {
-          name: 'PYTHON_ISOLATE_WORKER_DEPENDENCIES'
-          value: '1'
-        }
-        {
-          name: 'ENABLE_ORYX_BUILD'
-          value: 'true'
-        }
-        {
-          name: 'SCM_DO_BUILD_DURING_DEPLOYMENT'
-          value: 'true'
-        }
-      ]
-      cors: {
-        allowedOrigins: [
-          'https://portal.azure.com'
-          'https://ms.portal.azure.com'
-        ]
-        supportCredentials: false
-      }
-      ftpsState: 'Disabled'
-      minTlsVersion: '1.2'
-      use32BitWorkerProcess: false
-      pythonVersion: '3.11'
+  }
+  
+  resource configAppSettings 'config' = {
+    name: 'appsettings'
+    properties: {
+      AzureWebJobsStorage__accountName: storageAccount.name
+      AzureWebJobsStorage__credential: 'managedidentity'
+      AzureWebJobsStorage__clientId: userAssignedIdentity.properties.clientId
+      FUNCTIONS_EXTENSION_VERSION: '~4'
+      APPLICATIONINSIGHTS_INSTRUMENTATIONKEY: applicationInsights.properties.InstrumentationKey
+      APPLICATIONINSIGHTS_AUTHENTICATION_STRING: 'ClientId=${userAssignedIdentity.properties.clientId};Authorization=AAD'
+      PYTHON_ISOLATE_WORKER_DEPENDENCIES: '1'
+      ENABLE_ORYX_BUILD: 'true'
+      SCM_DO_BUILD_DURING_DEPLOYMENT: 'true'
     }
   }
 }
@@ -228,6 +230,7 @@ resource applicationInsights 'Microsoft.Insights/components@2020-02-02' = {
   kind: 'web'
   properties: {
     Application_Type: 'web'
+    DisableLocalAuth: true
     publicNetworkAccessForIngestion: 'Enabled'
     publicNetworkAccessForQuery: 'Enabled'
   }
@@ -237,27 +240,70 @@ resource applicationInsights 'Microsoft.Insights/components@2020-02-02' = {
 // RBAC ASSIGNMENTS (Managed Identity Permissions)
 // ============================================================================
 
-// Function App needs Storage Blob Data Owner to access deployment storage
-resource functionAppStorageBlobDataOwner 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(storageAccount.id, functionApp.id, 'b7e6dc6d-f1e8-4753-8033-0f276bb0955b')
+// Define role IDs as variables for clarity
+var storageBlobDataOwnerRoleId = 'b7e6dc6d-f1e8-4753-8033-0f276bb0955b'
+var storageBlobDataContributorRoleId = 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
+var storageQueueDataContributorRoleId = '974c5e8b-45b9-4653-ba55-5f855dd0fb88'
+var storageTableDataContributorRoleId = '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3'
+var monitoringMetricsPublisherRoleId = '3913510d-42f4-4e42-8a64-420c390055eb'
+
+// User-assigned identity needs Storage Blob Data Owner
+resource roleAssignmentBlobDataOwner 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(subscription().id, storageAccount.id, userAssignedIdentity.id, 'Storage Blob Data Owner')
   scope: storageAccount
   properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b7e6dc6d-f1e8-4753-8033-0f276bb0955b') // Storage Blob Data Owner
-    principalId: functionApp.identity.principalId
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', storageBlobDataOwnerRoleId)
+    principalId: userAssignedIdentity.properties.principalId
     principalType: 'ServicePrincipal'
-    description: 'Grants Function App access to storage for deployments and data'
+    description: 'Grants managed identity access to storage blobs'
   }
 }
 
-// Function App needs Storage Account Contributor for WebJobs storage
-resource functionAppStorageAccountContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(storageAccount.id, functionApp.id, 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
+// User-assigned identity needs Storage Blob Data Contributor  
+resource roleAssignmentBlob 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(subscription().id, storageAccount.id, userAssignedIdentity.id, 'Storage Blob Data Contributor')
   scope: storageAccount
   properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe') // Storage Account Contributor
-    principalId: functionApp.identity.principalId
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', storageBlobDataContributorRoleId)
+    principalId: userAssignedIdentity.properties.principalId
     principalType: 'ServicePrincipal'
-    description: 'Grants Function App management access to storage account'
+    description: 'Grants managed identity access to storage blob operations'
+  }
+}
+
+// User-assigned identity needs Storage Queue Data Contributor
+resource roleAssignmentQueueStorage 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(subscription().id, storageAccount.id, userAssignedIdentity.id, 'Storage Queue Data Contributor')
+  scope: storageAccount
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', storageQueueDataContributorRoleId)
+    principalId: userAssignedIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+    description: 'Grants managed identity access to storage queues'
+  }
+}
+
+// User-assigned identity needs Storage Table Data Contributor
+resource roleAssignmentTableStorage 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(subscription().id, storageAccount.id, userAssignedIdentity.id, 'Storage Table Data Contributor')
+  scope: storageAccount
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', storageTableDataContributorRoleId)
+    principalId: userAssignedIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+    description: 'Grants managed identity access to storage tables'
+  }
+}
+
+// User-assigned identity needs Monitoring Metrics Publisher for Application Insights
+resource roleAssignmentAppInsights 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(subscription().id, applicationInsights.id, userAssignedIdentity.id, 'Monitoring Metrics Publisher')
+  scope: applicationInsights
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', monitoringMetricsPublisherRoleId)
+    principalId: userAssignedIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+    description: 'Grants managed identity access to publish metrics to Application Insights'
   }
 }
 
@@ -277,7 +323,9 @@ output projectEndpoint string = 'https://${aiFoundry.name}.services.ai.azure.com
 // Function App outputs
 output functionAppName string = functionApp.name
 output functionAppUrl string = 'https://${functionApp.properties.defaultHostName}'
-output functionAppPrincipalId string = functionApp.identity.principalId
+output functionAppPrincipalId string = userAssignedIdentity.properties.principalId
+output userAssignedIdentityId string = userAssignedIdentity.id
+output userAssignedIdentityClientId string = userAssignedIdentity.properties.clientId
 output storageAccountName string = storageAccount.name
 output applicationInsightsName string = applicationInsights.name
 output applicationInsightsConnectionString string = applicationInsights.properties.ConnectionString

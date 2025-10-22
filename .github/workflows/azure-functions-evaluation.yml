@@ -91,7 +91,7 @@ jobs:
           az deployment group create \
             --resource-group ${{ inputs.resource_group }} \
             --template-file infrastructure/main.bicep \
-            --parameters @infrastructure/main.parameters.json \
+            --parameters @infrastructure/main-flex.parameters.json \
             --parameters functionAppName=${{ inputs.function_app_name }}
           
           # Get Function App URL
