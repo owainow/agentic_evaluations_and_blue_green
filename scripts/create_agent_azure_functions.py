@@ -401,6 +401,14 @@ Always respond to weather queries with properly formatted JSON data."""
         print(f"\n✓ Agent details saved to: {output_file}")
         print(f"✓ Agent ID: {agent_details['id']}")
         
+        # Output for GitHub Actions
+        github_output = os.getenv('GITHUB_OUTPUT')
+        if github_output:
+            with open(github_output, 'a') as f:
+                f.write(f"agentId={agent_details['id']}\n")
+                f.write(f"agentName={agent_details['name']}\n")
+                f.write(f"functionAppUrl={function_app_url}\n")
+        
         if test_result.get("success"):
             print("✓ Agent test completed successfully")
         else:
