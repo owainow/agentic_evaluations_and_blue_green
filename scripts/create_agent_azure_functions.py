@@ -345,21 +345,24 @@ def test_agent_with_azure_functions(project_client, agent_id, test_query="What's
 
 def main():
     """Main function to create the agent"""
-    # Configuration from environment variables or defaults
-    project_endpoint = os.getenv('AZURE_AI_PROJECT_ENDPOINT', 'https://ai-proj-agents-test.eastus.api.azureml.ms')
+    # Get environment variables
+    project_endpoint = os.getenv('PROJECT_ENDPOINT') or os.getenv('AZURE_AI_PROJECT_ENDPOINT')
     model_deployment_name = os.getenv('MODEL_DEPLOYMENT_NAME', 'gpt-4o-deployment')
     function_app_url = os.getenv('FUNCTION_APP_URL')  # Required for Azure Functions
+    agent_name = os.getenv('AGENT_NAME', 'WeatherNewsAgent-AzureFunctions')
+    agent_instructions = os.getenv('AGENT_INSTRUCTIONS', """You are a specialized weather and news information agent. 
+Your primary function is to provide accurate weather information and current news articles using Azure Functions.
+Always respond to weather queries with properly formatted JSON data.""")
+    
+    if not project_endpoint:
+        print("Error: PROJECT_ENDPOINT environment variable is required")
+        print("Set it to your Azure AI Foundry project endpoint")
+        sys.exit(1)
     
     if not function_app_url:
         print("Error: FUNCTION_APP_URL environment variable is required")
         print("Set it to your Azure Function App URL, e.g.: https://my-function-app.azurewebsites.net")
         sys.exit(1)
-    
-    # Agent configuration
-    agent_name = "WeatherNewsAgent-AzureFunctions"
-    agent_instructions = """You are a specialized weather and news information agent. 
-Your primary function is to provide accurate weather information and current news articles using Azure Functions.
-Always respond to weather queries with properly formatted JSON data."""
     
     try:
         print("=== Azure AI Foundry Agent Creation with Azure Functions ===")
