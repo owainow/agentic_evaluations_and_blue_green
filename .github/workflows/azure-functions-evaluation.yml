@@ -1,0 +1,260 @@
+name: "AI Agent Evaluation with Azure Functions"
+
+on:
+  workflow_dispatch:
+    inputs:
+      project_endpoint:
+        description: 'Azure AI Foundry project endpoint'
+        required: true
+        type: string
+      deployment_name:
+        description: 'Model deployment name'
+        required: true
+        type: string
+      agent_id:
+        description: 'Agent ID to evaluate'
+        required: true
+        type: string
+      data_file:
+        description: 'Evaluation data file'
+        required: false
+        type: string
+        default: 'weather_test.json'
+      resource_group:
+        description: 'Azure Resource Group name'
+        required: true
+        type: string
+      function_app_name:
+        description: 'Azure Function App name'
+        required: true
+        type: string
+  workflow_call:
+    inputs:
+      project_endpoint:
+        description: 'Azure AI Foundry project endpoint'
+        required: true
+        type: string
+      deployment_name:
+        description: 'Model deployment name'
+        required: true
+        type: string
+      agent_id:
+        description: 'Agent ID to evaluate'
+        required: true
+        type: string
+      data_file:
+        description: 'Evaluation data file'
+        required: false
+        type: string
+        default: 'weather_test.json'
+      resource_group:
+        description: 'Azure Resource Group name'
+        required: true
+        type: string
+      function_app_name:
+        description: 'Azure Function App name'
+        required: true
+        type: string
+    secrets:
+      AZURE_CLIENT_ID:
+        required: true
+      AZURE_TENANT_ID:
+        required: true
+      AZURE_SUBSCRIPTION_ID:
+        required: true
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy-infrastructure:
+    name: Deploy Azure Infrastructure
+    runs-on: ubuntu-latest
+    outputs:
+      function-app-url: ${{ steps.deploy.outputs.function-app-url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure login using Federated Credentials
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy Bicep Infrastructure
+        id: deploy
+        run: |
+          echo "Deploying infrastructure..."
+          az deployment group create \
+            --resource-group ${{ inputs.resource_group }} \
+            --template-file infrastructure/main.bicep \
+            --parameters @infrastructure/main.parameters.json \
+            --parameters functionAppName=${{ inputs.function_app_name }}
+          
+          # Get Function App URL
+          FUNCTION_URL=$(az functionapp show \
+            --resource-group ${{ inputs.resource_group }} \
+            --name ${{ inputs.function_app_name }} \
+            --query "defaultHostName" \
+            --output tsv)
+          
+          echo "function-app-url=https://$FUNCTION_URL" >> $GITHUB_OUTPUT
+          echo "Function App URL: https://$FUNCTION_URL"
+
+  deploy-functions:
+    name: Deploy Azure Functions
+    runs-on: ubuntu-latest
+    needs: deploy-infrastructure
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Azure login using Federated Credentials
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Install Azure Functions Core Tools
+        run: |
+          curl https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > microsoft.gpg
+          sudo mv microsoft.gpg /etc/apt/trusted.gpg.d/microsoft.gpg
+          sudo sh -c 'echo "deb [arch=amd64] https://packages.microsoft.com/repos/microsoft-ubuntu-$(lsb_release -cs)-prod $(lsb_release -cs) main" > /etc/apt/sources.list.d/dotnetdev.list'
+          sudo apt-get update
+          sudo apt-get install azure-functions-core-tools-4
+
+      - name: Install Function Dependencies
+        run: |
+          cd functions
+          pip install -r requirements.txt
+
+      - name: Deploy Functions to Azure
+        run: |
+          cd functions
+          func azure functionapp publish ${{ inputs.function_app_name }} --python
+
+      - name: Test Function Deployment
+        run: |
+          echo "Testing deployed functions..."
+          FUNCTION_URL="${{ needs.deploy-infrastructure.outputs.function-app-url }}"
+          
+          # Test weather function
+          curl -X POST "$FUNCTION_URL/api/get_weather" \
+            -H "Content-Type: application/json" \
+            -d '{"location": "London", "unit": "celsius"}' \
+            --fail --show-error || echo "Weather function test failed"
+          
+          # Test news function  
+          curl -X POST "$FUNCTION_URL/api/get_news_articles" \
+            -H "Content-Type: application/json" \
+            -d '{"topic": "technology", "max_articles": 3}' \
+            --fail --show-error || echo "News function test failed"
+
+  run-ai-foundry-evaluation:
+    name: AI Foundry Evaluation
+    runs-on: ubuntu-latest
+    needs: [deploy-infrastructure, deploy-functions]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure login using Federated Credentials
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Set up environment for Azure Functions
+        run: |
+          echo "FUNCTION_APP_URL=${{ needs.deploy-infrastructure.outputs.function-app-url }}" >> $GITHUB_ENV
+          echo "PYTHONPATH=${{ github.workspace }}/evaluations:$PYTHONPATH" >> $GITHUB_ENV
+
+      - name: Create agent with Azure Functions
+        run: |
+          python scripts/create_agent_azure_functions.py
+        env:
+          AZURE_AI_PROJECT_ENDPOINT: ${{ inputs.project_endpoint }}
+          MODEL_DEPLOYMENT_NAME: ${{ inputs.deployment_name }}
+          FUNCTION_APP_URL: ${{ needs.deploy-infrastructure.outputs.function-app-url }}
+
+      - name: Run AI Agent Evaluation
+        uses: microsoft/ai-agent-evals@v2-beta
+        with:
+          azure-ai-project-endpoint: ${{ inputs.project_endpoint }}
+          deployment-name: ${{ inputs.deployment_name }}
+          agent-ids: ${{ inputs.agent_id }}
+          data-path: ${{ github.workspace }}/evaluations/${{ inputs.data_file }}
+        env:
+          AGENT_FUNCTIONS_MODULE: agent_functions
+          FUNCTION_APP_URL: ${{ needs.deploy-infrastructure.outputs.function-app-url }}
+
+  json-validation-azure-functions:
+    name: JSON Response Validation with Azure Functions
+    runs-on: ubuntu-latest
+    needs: [deploy-infrastructure, deploy-functions]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Azure login using Federated Credentials
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Install Azure AI SDK
+        run: |
+          pip install azure-ai-projects==1.0.0 azure-ai-agents==1.1.0 azure-identity requests
+
+      - name: Run JSON Validation with Azure Functions
+        env:
+          PROJECT_ENDPOINT: ${{ inputs.project_endpoint }}
+          AGENT_ID: ${{ inputs.agent_id }}
+          AGENT_NAME: 'Weather News Agent'
+          FUNCTION_APP_URL: ${{ needs.deploy-infrastructure.outputs.function-app-url }}
+        run: |
+          python scripts/validate_json_responses_azure_functions.py
+
+      - name: Upload JSON Validation Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: json-validation-results-azure-functions
+          path: json_validation_results_azure_functions.json
+          retention-days: 30
+
+  cleanup:
+    name: Cleanup Resources (Optional)
+    runs-on: ubuntu-latest
+    needs: [run-ai-foundry-evaluation, json-validation-azure-functions]
+    if: always() && inputs.cleanup_resources == 'true'
+    steps:
+      - name: Azure login using Federated Credentials
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Delete Function App
+        run: |
+          az functionapp delete \
+            --resource-group ${{ inputs.resource_group }} \
+            --name ${{ inputs.function_app_name }} \
+            --yes || echo "Function app deletion failed or already deleted"

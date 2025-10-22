@@ -56,7 +56,7 @@ on:
         description: 'Deployment capacity (TPM in thousands)'
         required: true
         type: number
-        default: 10
+        default: 100
       
       agent_name:
         description: 'Name for the agent'
@@ -80,7 +80,7 @@ on:
         description: 'Evaluation data file to use'
         required: false
         type: string
-        default: 'basic_test.json'
+        default: 'weather_test.json'
 
 permissions:
   id-token: write

@@ -66,6 +66,10 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      - name: Set Python path for agent functions
+        run: |
+          echo "PYTHONPATH=${{ github.workspace }}/evaluations:$PYTHONPATH" >> $GITHUB_ENV
+
       - name: Run AI Agent Evaluation
         uses: microsoft/ai-agent-evals@v2-beta
         with:
@@ -73,6 +77,8 @@ jobs:
           deployment-name: ${{ inputs.deployment_name }}
           agent-ids: ${{ inputs.agent_id }}
           data-path: ${{ github.workspace }}/evaluations/${{ inputs.data_file }}
+        env:
+          AGENT_FUNCTIONS_MODULE: agent_functions
 
   json-validation:
     name: JSON Response Validation
