@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.31.92.45157",
-      "templateHash": "859249882789720458"
+      "templateHash": "2744146331851071125"
     }
   },
   "parameters": {
@@ -35,6 +35,13 @@
       ],
       "metadata": {
         "description": "Environment name (dev, test, prod)"
+      }
+    },
+    "functionAppName": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "Custom name for the Function App (optional)"
       }
     },
     "tags": {
@@ -119,13 +126,13 @@
     },
     {
       "type": "Microsoft.Web/serverfarms",
-      "apiVersion": "2023-01-01",
+      "apiVersion": "2023-12-01",
       "name": "[format('{0}-asp-{1}-{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix'))]",
       "location": "[parameters('location')]",
       "tags": "[parameters('tags')]",
       "sku": {
-        "name": "Y1",
-        "tier": "Dynamic"
+        "name": "FC1",
+        "tier": "FlexConsumption"
       },
       "properties": {
         "reserved": true
@@ -133,8 +140,8 @@
     },
     {
       "type": "Microsoft.Web/sites",
-      "apiVersion": "2023-01-01",
-      "name": "[format('{0}-func-{1}-{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix'))]",
+      "apiVersion": "2023-12-01",
+      "name": "[if(not(equals(parameters('functionAppName'), '')), parameters('functionAppName'), format('{0}-func-{1}-{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix')))]",
       "location": "[parameters('location')]",
       "tags": "[union(parameters('tags'), createObject('Purpose', 'Agent Function Tools'))]",
       "kind": "functionapp,linux",
@@ -145,20 +152,35 @@
         "serverFarmId": "[resourceId('Microsoft.Web/serverfarms', format('{0}-asp-{1}-{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix')))]",
         "httpsOnly": true,
         "reserved": true,
+        "functionAppConfig": {
+          "deployment": {
+            "storage": {
+              "type": "blobContainer",
+              "value": "[format('{0}deployments', reference(resourceId('Microsoft.Storage/storageAccounts', format('{0}st{1}{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix'))), '2023-01-01').primaryEndpoints.blob)]",
+              "authentication": {
+                "type": "SystemAssignedIdentity"
+              }
+            }
+          },
+          "scaleAndConcurrency": {
+            "maximumInstanceCount": 100,
+            "instanceMemoryMB": 2048
+          },
+          "runtime": {
+            "name": "python",
+            "version": "3.11"
+          }
+        },
         "siteConfig": {
           "linuxFxVersion": "PYTHON|3.11",
           "appSettings": [
             {
-              "name": "AzureWebJobsStorage",
-              "value": "[format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1};EndpointSuffix={2}', format('{0}st{1}{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix')), listKeys(resourceId('Microsoft.Storage/storageAccounts', format('{0}st{1}{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix'))), '2023-01-01').keys[0].value, environment().suffixes.storage)]"
+              "name": "AzureWebJobsStorage__accountName",
+              "value": "[format('{0}st{1}{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix'))]"
             },
             {
-              "name": "WEBSITE_CONTENTAZUREFILECONNECTIONSTRING",
-              "value": "[format('DefaultEndpointsProtocol=https;AccountName={0};AccountKey={1};EndpointSuffix={2}', format('{0}st{1}{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix')), listKeys(resourceId('Microsoft.Storage/storageAccounts', format('{0}st{1}{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix'))), '2023-01-01').keys[0].value, environment().suffixes.storage)]"
-            },
-            {
-              "name": "WEBSITE_CONTENTSHARE",
-              "value": "[toLower(format('{0}-func-{1}', parameters('baseName'), parameters('environment')))]"
+              "name": "AzureWebJobsStorage__credential",
+              "value": "managedidentity"
             },
             {
               "name": "FUNCTIONS_EXTENSION_VERSION",
@@ -216,6 +238,38 @@
         "publicNetworkAccessForIngestion": "Enabled",
         "publicNetworkAccessForQuery": "Enabled"
       }
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[format('Microsoft.Storage/storageAccounts/{0}', format('{0}st{1}{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix')))]",
+      "name": "[guid(resourceId('Microsoft.Storage/storageAccounts', format('{0}st{1}{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix'))), resourceId('Microsoft.Web/sites', if(not(equals(parameters('functionAppName'), '')), parameters('functionAppName'), format('{0}-func-{1}-{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix')))), 'b7e6dc6d-f1e8-4753-8033-0f276bb0955b')]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b7e6dc6d-f1e8-4753-8033-0f276bb0955b')]",
+        "principalId": "[reference(resourceId('Microsoft.Web/sites', if(not(equals(parameters('functionAppName'), '')), parameters('functionAppName'), format('{0}-func-{1}-{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix')))), '2023-12-01', 'full').identity.principalId]",
+        "principalType": "ServicePrincipal",
+        "description": "Grants Function App access to storage for deployments and data"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/sites', if(not(equals(parameters('functionAppName'), '')), parameters('functionAppName'), format('{0}-func-{1}-{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix'))))]",
+        "[resourceId('Microsoft.Storage/storageAccounts', format('{0}st{1}{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[format('Microsoft.Storage/storageAccounts/{0}', format('{0}st{1}{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix')))]",
+      "name": "[guid(resourceId('Microsoft.Storage/storageAccounts', format('{0}st{1}{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix'))), resourceId('Microsoft.Web/sites', if(not(equals(parameters('functionAppName'), '')), parameters('functionAppName'), format('{0}-func-{1}-{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix')))), 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')]",
+        "principalId": "[reference(resourceId('Microsoft.Web/sites', if(not(equals(parameters('functionAppName'), '')), parameters('functionAppName'), format('{0}-func-{1}-{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix')))), '2023-12-01', 'full').identity.principalId]",
+        "principalType": "ServicePrincipal",
+        "description": "Grants Function App management access to storage account"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Web/sites', if(not(equals(parameters('functionAppName'), '')), parameters('functionAppName'), format('{0}-func-{1}-{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix'))))]",
+        "[resourceId('Microsoft.Storage/storageAccounts', format('{0}st{1}{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix')))]"
+      ]
     }
   ],
   "outputs": {
@@ -245,15 +299,15 @@
     },
     "functionAppName": {
       "type": "string",
-      "value": "[format('{0}-func-{1}-{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix'))]"
+      "value": "[if(not(equals(parameters('functionAppName'), '')), parameters('functionAppName'), format('{0}-func-{1}-{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix')))]"
     },
     "functionAppUrl": {
       "type": "string",
-      "value": "[format('https://{0}', reference(resourceId('Microsoft.Web/sites', format('{0}-func-{1}-{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix'))), '2023-01-01').defaultHostName)]"
+      "value": "[format('https://{0}', reference(resourceId('Microsoft.Web/sites', if(not(equals(parameters('functionAppName'), '')), parameters('functionAppName'), format('{0}-func-{1}-{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix')))), '2023-12-01').defaultHostName)]"
     },
     "functionAppPrincipalId": {
       "type": "string",
-      "value": "[reference(resourceId('Microsoft.Web/sites', format('{0}-func-{1}-{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix'))), '2023-01-01', 'full').identity.principalId]"
+      "value": "[reference(resourceId('Microsoft.Web/sites', if(not(equals(parameters('functionAppName'), '')), parameters('functionAppName'), format('{0}-func-{1}-{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix')))), '2023-12-01', 'full').identity.principalId]"
     },
     "storageAccountName": {
       "type": "string",

@@ -112,17 +112,17 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
 }
 
 // ============================================================================
-// APP SERVICE PLAN (for Azure Functions)
+// APP SERVICE PLAN (for Azure Functions Flex Consumption)
 // ============================================================================
-// Using Consumption (Y1) plan for cost-effective serverless scaling
+// Using Flex Consumption plan - no "Dynamic VMs" quota needed, better performance
 
-resource appServicePlan 'Microsoft.Web/serverfarms@2023-01-01' = {
+resource appServicePlan 'Microsoft.Web/serverfarms@2023-12-01' = {
   name: '${baseName}-asp-${environment}-${uniqueSuffix}'
   location: location
   tags: tags
   sku: {
-    name: 'Y1'
-    tier: 'Dynamic'
+    name: 'FC1'
+    tier: 'FlexConsumption'
   }
   properties: {
     reserved: true // Required for Linux
@@ -130,10 +130,10 @@ resource appServicePlan 'Microsoft.Web/serverfarms@2023-01-01' = {
 }
 
 // ============================================================================
-// FUNCTION APP (Agent Tool Functions)
+// FUNCTION APP (Agent Tool Functions - Flex Consumption)
 // ============================================================================
 
-resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
+resource functionApp 'Microsoft.Web/sites@2023-12-01' = {
   name: functionAppName != '' ? functionAppName : '${baseName}-func-${environment}-${uniqueSuffix}'
   location: location
   tags: union(tags, {
@@ -147,20 +147,35 @@ resource functionApp 'Microsoft.Web/sites@2023-01-01' = {
     serverFarmId: appServicePlan.id
     httpsOnly: true
     reserved: true
+    functionAppConfig: {
+      deployment: {
+        storage: {
+          type: 'blobContainer'
+          value: '${storageAccount.properties.primaryEndpoints.blob}deployments'
+          authentication: {
+            type: 'SystemAssignedIdentity'
+          }
+        }
+      }
+      scaleAndConcurrency: {
+        maximumInstanceCount: 100
+        instanceMemoryMB: 2048
+      }
+      runtime: {
+        name: 'python'
+        version: '3.11'
+      }
+    }
     siteConfig: {
       linuxFxVersion: 'PYTHON|3.11'
       appSettings: [
         {
-          name: 'AzureWebJobsStorage'
-          value: 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.name};AccountKey=${storageAccount.listKeys().keys[0].value};EndpointSuffix=${az.environment().suffixes.storage}'
+          name: 'AzureWebJobsStorage__accountName'
+          value: storageAccount.name
         }
         {
-          name: 'WEBSITE_CONTENTAZUREFILECONNECTIONSTRING'
-          value: 'DefaultEndpointsProtocol=https;AccountName=${storageAccount.name};AccountKey=${storageAccount.listKeys().keys[0].value};EndpointSuffix=${az.environment().suffixes.storage}'
-        }
-        {
-          name: 'WEBSITE_CONTENTSHARE'
-          value: toLower('${baseName}-func-${environment}')
+          name: 'AzureWebJobsStorage__credential'
+          value: 'managedidentity'
         }
         {
           name: 'FUNCTIONS_EXTENSION_VERSION'
@@ -215,6 +230,34 @@ resource applicationInsights 'Microsoft.Insights/components@2020-02-02' = {
     Application_Type: 'web'
     publicNetworkAccessForIngestion: 'Enabled'
     publicNetworkAccessForQuery: 'Enabled'
+  }
+}
+
+// ============================================================================
+// RBAC ASSIGNMENTS (Managed Identity Permissions)
+// ============================================================================
+
+// Function App needs Storage Blob Data Owner to access deployment storage
+resource functionAppStorageBlobDataOwner 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(storageAccount.id, functionApp.id, 'b7e6dc6d-f1e8-4753-8033-0f276bb0955b')
+  scope: storageAccount
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'b7e6dc6d-f1e8-4753-8033-0f276bb0955b') // Storage Blob Data Owner
+    principalId: functionApp.identity.principalId
+    principalType: 'ServicePrincipal'
+    description: 'Grants Function App access to storage for deployments and data'
+  }
+}
+
+// Function App needs Storage Account Contributor for WebJobs storage
+resource functionAppStorageAccountContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(storageAccount.id, functionApp.id, 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
+  scope: storageAccount
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe') // Storage Account Contributor
+    principalId: functionApp.identity.principalId
+    principalType: 'ServicePrincipal'
+    description: 'Grants Function App management access to storage account'
   }
 }
 
