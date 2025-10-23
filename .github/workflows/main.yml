@@ -74,6 +74,15 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies for function implementations
+        run: |
+          pip install requests
+
       - name: Run AI Agent Evaluation
         uses: microsoft/ai-agent-evals@v2-beta
         with:
@@ -83,6 +92,8 @@ jobs:
           data-path: ${{ github.workspace }}/evaluations/${{ inputs.data_file }}
         env:
           FUNCTION_APP_URL: ${{ inputs.function_app_url }}
+          PYTHONPATH: ${{ github.workspace }}/evaluations:$PYTHONPATH
+          AGENT_FUNCTIONS_MODULE: agent_functions
 
   json-validation:
     name: JSON Response Validation
