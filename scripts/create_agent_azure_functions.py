@@ -259,17 +259,36 @@ CRITICAL RULES - You MUST follow these without exception:
    - Stay focused on weather and news information only
 """
         
-        # Create the agent with function tools
+        # Create the agent with function tools (with retry for deployment availability)
         print(f"Creating agent '{agent_name}' with model '{model_deployment_name}' and Azure Functions...")
         print(f"Function App URL: {function_app_url}")
         
-        agent = project_client.agents.create_agent(
-            model=model_deployment_name,
-            name=agent_name,
-            instructions=enhanced_instructions,
-            tools=function_tools,
-            description=agent_description or f"Weather and news agent using {model_deployment_name} with Azure Functions"
-        )
+        agent = None
+        max_retries = 3
+        retry_delay = 30  # seconds
+        
+        for attempt in range(max_retries + 1):
+            try:
+                agent = project_client.agents.create_agent(
+                    model=model_deployment_name,
+                    name=agent_name,
+                    instructions=enhanced_instructions,
+                    tools=function_tools,
+                    description=agent_description or f"Weather and news agent using {model_deployment_name} with Azure Functions"
+                )
+                break
+            except Exception as e:
+                error_str = str(e).lower()
+                if "invalid_deployment" in error_str and attempt < max_retries:
+                    print(f"⚠️  Model deployment not ready for agent creation (attempt {attempt + 1}/{max_retries + 1})")
+                    print(f"   Waiting {retry_delay} seconds for deployment to become available...")
+                    time.sleep(retry_delay)
+                    retry_delay *= 1.5  # Exponential backoff
+                else:
+                    raise
+        
+        if agent is None:
+            raise Exception("Failed to create agent after multiple attempts - deployment may not be ready")
         
         print(f"✓ Agent created successfully!")
         print(f"  Agent ID: {agent.id}")
@@ -323,12 +342,36 @@ def test_agent_with_azure_functions(project_client, agent_id, function_app_url, 
         )
         print(f"Sent message: {message.id}")
         
-        # Run the agent
-        run = project_client.agents.runs.create(
-            thread_id=thread.id,
-            agent_id=agent_id
-        )
-        print(f"Started run: {run.id}")
+        # Run the agent with retry for deployment availability
+        run = None
+        max_retries = 3
+        retry_delay = 30  # seconds
+        
+        for attempt in range(max_retries + 1):
+            try:
+                run = project_client.agents.runs.create(
+                    thread_id=thread.id,
+                    agent_id=agent_id
+                )
+                print(f"Started run: {run.id}")
+                break
+            except Exception as e:
+                error_str = str(e).lower()
+                if "invalid_deployment" in error_str and attempt < max_retries:
+                    print(f"⚠️  Model deployment not ready (attempt {attempt + 1}/{max_retries + 1})")
+                    print(f"   Waiting {retry_delay} seconds for deployment to become available...")
+                    time.sleep(retry_delay)
+                    retry_delay *= 1.5  # Exponential backoff
+                else:
+                    raise
+        
+        if run is None:
+            return {
+                "success": False,
+                "error": "Failed to create run after multiple attempts",
+                "run_status": "failed",
+                "execution_time": 0
+            }
         
         # Wait for completion with timeout and handle function calls
         max_wait_time = 120  # seconds
