@@ -10,7 +10,7 @@ import json
 import requests
 import time
 from azure.ai.projects import AIProjectClient
-from azure.ai.projects.models import FunctionTool, ToolSet
+from azure.ai.projects.models import ToolSet
 from azure.identity import DefaultAzureCredential
 
 
@@ -263,14 +263,19 @@ def create_agent(
         function_tools_definitions = create_function_tool_definition()
         
         # Create function tools with actual implementations for enable_auto_function_calls
-        print("Creating FunctionTool with implementations...")
-        user_functions = [get_weather, get_news_articles]  # Use list and correct function names
-        function_tools = FunctionTool(functions=user_functions)
+        print("Creating function tools for Azure Functions...")
+        
+        # Import the FunctionTool from the correct location
+        from azure.ai.projects.models import FunctionTool
+        
+        # Create function tools with the implementations - use the correct constructor
+        user_functions = [get_weather, get_news_articles]
+        functions = FunctionTool(user_functions)
         
         # Initialize agent toolset with user functions - CRITICAL for Azure Functions integration
         print("Creating ToolSet for enable_auto_function_calls...")
         toolset = ToolSet()
-        toolset.add(function_tools)
+        toolset.add(functions)
         
         # Enhanced instructions that work with function calling
         enhanced_instructions = f"""{agent_instructions}
@@ -323,7 +328,7 @@ CRITICAL RULES - You MUST follow these without exception:
                     model=model_deployment_name,
                     name=agent_name,
                     instructions=enhanced_instructions,
-                    tools=function_tools.definitions,
+                    tools=functions.definitions,
                     description=agent_description or f"Weather and news agent using {model_deployment_name} with Azure Functions"
                 )
                 break
@@ -348,7 +353,7 @@ CRITICAL RULES - You MUST follow these without exception:
         print(f"  Agent ID: {agent.id}")
         print(f"  Agent Name: {agent.name}")
         print(f"  Model: {agent.model}")
-        print(f"  Tools: {len(function_tools.definitions)} Azure Function(s) enabled")
+        print(f"  Tools: {len(functions.definitions)} Azure Function(s) enabled")
         print(f"  Auto Function Calls: ✓ Enabled")
         
         # Return agent details
@@ -360,7 +365,7 @@ CRITICAL RULES - You MUST follow these without exception:
             "description": agent.description,
             "function_app_url": function_app_url,
             "created_at": str(agent.created_at) if hasattr(agent, 'created_at') else None,
-            "tools_count": len(function_tools.definitions),
+            "tools_count": len(functions.definitions),
             "auto_function_calls_enabled": True
         }
         
