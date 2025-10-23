@@ -2,16 +2,14 @@
 """
 Function implementations for AI Agent evaluations
 These functions are called by the microsoft/ai-agent-evals GitHub Action
-Compatible with azure-ai-agents enable_auto_function_calls
 """
 import os
 import json
 import requests
 from datetime import datetime, timezone
-from typing import Optional
 
 
-def get_weather(location: str, unit: Optional[str] = "celsius") -> str:
+def get_weather(location: str, unit: str = "celsius") -> str:
     """
     Fetches the current weather for a specified location.
     This function calls the Azure Function or provides mock data for evaluation.
@@ -50,7 +48,7 @@ def get_weather(location: str, unit: Optional[str] = "celsius") -> str:
     return json.dumps({"response": mock_data})
 
 
-def get_news_articles(topic: str, max_articles: Optional[int] = 5) -> str:
+def get_news_articles(topic: str, max_articles: int = 5) -> str:
     """
     Fetches news articles for a specified topic.
     This function calls the Azure Function or provides mock data for evaluation.
@@ -104,10 +102,3 @@ def get_news_articles(topic: str, max_articles: Optional[int] = 5) -> str:
     }
     
     return json.dumps({"response": mock_data})
-
-
-# Export functions for enable_auto_function_calls compatibility
-user_functions = {get_weather, get_news_articles}
-
-# Alternative exports for different discovery patterns
-__all__ = ['get_weather', 'get_news_articles', 'user_functions']

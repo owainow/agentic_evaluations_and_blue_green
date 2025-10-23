@@ -10,11 +10,11 @@ import json
 import requests
 import time
 from azure.ai.projects import AIProjectClient
-from azure.ai.agents.models import FunctionTool
+from azure.ai.projects.models import FunctionTool, ToolSet
 from azure.identity import DefaultAzureCredential
 
 
-def get_weather_function(location: str, unit: str = "celsius") -> str:
+def get_weather(location: str, unit: str = "celsius") -> str:
     """
     Function implementation for get_weather that calls Azure Functions
     This enables enable_auto_function_calls to work properly
@@ -35,7 +35,7 @@ def get_weather_function(location: str, unit: str = "celsius") -> str:
         })
 
 
-def get_news_articles_function(topic: str, max_articles: int = 5) -> str:
+def get_news_articles(topic: str, max_articles: int = 5) -> str:
     """
     Function implementation for get_news_articles that calls Azure Functions
     This enables enable_auto_function_calls to work properly
@@ -264,8 +264,13 @@ def create_agent(
         
         # Create function tools with actual implementations for enable_auto_function_calls
         print("Creating FunctionTool with implementations...")
-        user_functions = {get_weather_function, get_news_articles_function}
+        user_functions = [get_weather, get_news_articles]  # Use list and correct function names
         function_tools = FunctionTool(functions=user_functions)
+        
+        # Initialize agent toolset with user functions - CRITICAL for Azure Functions integration
+        print("Creating ToolSet for enable_auto_function_calls...")
+        toolset = ToolSet()
+        toolset.add(function_tools)
         
         # Enhanced instructions that work with function calling
         enhanced_instructions = f"""{agent_instructions}
@@ -337,7 +342,7 @@ CRITICAL RULES - You MUST follow these without exception:
         
         # Enable automatic function calling - this is CRITICAL for Azure Functions integration
         print("Enabling automatic function calls for Azure Functions...")
-        project_client.agents.enable_auto_function_calls(tools=function_tools)
+        project_client.agents.enable_auto_function_calls(toolset=toolset)
         
         print(f"✓ Agent created successfully!")
         print(f"  Agent ID: {agent.id}")
