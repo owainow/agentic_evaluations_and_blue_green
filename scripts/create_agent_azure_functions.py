@@ -10,7 +10,8 @@ import json
 import requests
 import time
 from azure.ai.projects import AIProjectClient
-from azure.ai.projects.models import FunctionTool, ToolSet
+from azure.ai.agents.models import FunctionTool
+from azure.ai.projects.models import ToolSet
 from azure.identity import DefaultAzureCredential
 
 
