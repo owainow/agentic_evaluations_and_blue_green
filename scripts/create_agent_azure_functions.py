@@ -293,8 +293,9 @@ def create_agent(
                                    f"Need: subscription_id={subscription_id}, resource_group_name={resource_group_name}, "
                                    f"project_name={project_name}. Error: {e}")
         else:
-            # Use the new constructor with separate parameters
+            # Use the new constructor with separate parameters AND endpoint
             project_client = AIProjectClient(
+                endpoint=project_endpoint,
                 subscription_id=subscription_id,
                 resource_group_name=resource_group_name,
                 project_name=project_name,
@@ -678,6 +679,7 @@ You should be helpful and present information in a user-friendly way.""")
                     return
         else:
             project_client = AIProjectClient(
+                endpoint=project_endpoint,
                 subscription_id=subscription_id,
                 resource_group_name=resource_group_name,
                 project_name=project_name,
