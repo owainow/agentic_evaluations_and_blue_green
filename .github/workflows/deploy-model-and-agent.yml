@@ -274,7 +274,7 @@ jobs:
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install azure-ai-projects azure-identity requests
+          pip install azure-ai-projects azure-ai-agents azure-identity requests
       
       - name: Create AI Agent with Azure Functions Tools
         id: create_agent

@@ -329,146 +329,184 @@ def test_agent_with_azure_functions(project_client, agent_id, function_app_url, 
     print(f"\n--- Testing Agent with Azure Functions ---")
     print(f"Query: {test_query}")
     
-    try:
-        # Create a thread for testing
-        thread = project_client.agents.threads.create()
-        print(f"Created test thread: {thread.id}")
-        
-        # Send the test message
-        message = project_client.agents.messages.create(
-            thread_id=thread.id,
-            role="user",
-            content=test_query
-        )
-        print(f"Sent message: {message.id}")
-        
-        # Run the agent with retry for deployment availability
-        run = None
-        max_retries = 3
-        retry_delay = 30  # seconds
-        
-        for attempt in range(max_retries + 1):
-            try:
-                run = project_client.agents.runs.create(
-                    thread_id=thread.id,
-                    agent_id=agent_id
-                )
-                print(f"Started run: {run.id}")
-                break
-            except Exception as e:
-                error_str = str(e).lower()
-                if "invalid_deployment" in error_str and attempt < max_retries:
-                    print(f"⚠️  Model deployment not ready (attempt {attempt + 1}/{max_retries + 1})")
-                    print(f"   Waiting {retry_delay} seconds for deployment to become available...")
-                    time.sleep(retry_delay)
-                    retry_delay *= 1.5  # Exponential backoff
-                else:
-                    raise
-        
-        if run is None:
-            return {
-                "success": False,
-                "error": "Failed to create run after multiple attempts",
-                "run_status": "failed",
-                "execution_time": 0
-            }
-        
-        # Wait for completion with timeout and handle function calls
-        max_wait_time = 120  # seconds
-        wait_time = 0
-        poll_interval = 2
-        
-        while run.status in ["queued", "in_progress", "requires_action"] and wait_time < max_wait_time:
-            time.sleep(poll_interval)
-            wait_time += poll_interval
-            run = project_client.agents.runs.get(
+    # Outer retry loop for deployment availability
+    max_test_retries = 3
+    test_retry_delay = 45  # seconds - longer delay for model deployment readiness
+    
+    for test_attempt in range(max_test_retries + 1):
+        try:
+            # Create a thread for testing
+            thread = project_client.agents.threads.create()
+            print(f"Created test thread: {thread.id}")
+            
+            # Send the test message
+            message = project_client.agents.messages.create(
                 thread_id=thread.id,
-                run_id=run.id
+                role="user",
+                content=test_query
             )
-            print(f"Run status: {run.status} (waited {wait_time}s)")
+            print(f"Sent message: {message.id}")
             
-            # Handle function calls when agent requires action
-            if run.status == "requires_action":
-                run = handle_function_calls(run, project_client, thread.id, function_app_url)
-        
-        print(f"Final run status: {run.status} after {wait_time}s")
-        
-        # Handle different completion states
-        if run.status == "completed":
-            # Get the response
-            try:
-                messages = project_client.agents.messages.list(
-                    thread_id=thread.id,
-                    order="asc"
-                )
-            except TypeError:
-                # Fallback without order parameter if not supported
-                messages = project_client.agents.messages.list(thread_id=thread.id)
+            # Run the agent with retry for deployment availability
+            run = None
+            max_retries = 3
+            retry_delay = 30  # seconds
             
-            # Find the assistant's response
-            response_content = None
-            message_list = list(messages)  # Convert ItemPaged to list
-            
-            print(f"Found {len(message_list)} messages in thread")
-            for i, msg in enumerate(message_list):
-                print(f"  Message {i}: role={msg.role}, content_length={len(msg.content) if msg.content else 0}")
-                if msg.role == "assistant" and msg.content:
-                    response_content = msg.content[0].text.value if msg.content else None
+            for attempt in range(max_retries + 1):
+                try:
+                    run = project_client.agents.runs.create(
+                        thread_id=thread.id,
+                        agent_id=agent_id
+                    )
+                    print(f"Started run: {run.id}")
                     break
+                except Exception as e:
+                    error_str = str(e).lower()
+                    if "invalid_deployment" in error_str and attempt < max_retries:
+                        print(f"⚠️  Model deployment not ready for run creation (attempt {attempt + 1}/{max_retries + 1})")
+                        print(f"   Waiting {retry_delay} seconds for deployment to become available...")
+                        time.sleep(retry_delay)
+                        retry_delay *= 1.5  # Exponential backoff
+                    else:
+                        raise
             
-            if response_content:
-                print(f"✓ Agent responded successfully")
-                print(f"Response: {response_content[:200]}..." if len(response_content or "") > 200 else f"Response: {response_content}")
+            if run is None:
+                if test_attempt < max_test_retries:
+                    print(f"⚠️  Failed to create run, will retry entire test (attempt {test_attempt + 1}/{max_test_retries + 1})")
+                    time.sleep(test_retry_delay)
+                    test_retry_delay *= 1.5
+                    continue
+                else:
+                    return {
+                        "success": False,
+                        "error": "Failed to create run after multiple attempts",
+                        "run_status": "failed",
+                        "execution_time": 0
+                    }
+            
+            # Wait for completion with timeout and handle function calls
+            max_wait_time = 120  # seconds
+            wait_time = 0
+            poll_interval = 2
+            
+            while run.status in ["queued", "in_progress", "requires_action"] and wait_time < max_wait_time:
+                time.sleep(poll_interval)
+                wait_time += poll_interval
+                run = project_client.agents.runs.get(
+                    thread_id=thread.id,
+                    run_id=run.id
+                )
+                print(f"Run status: {run.status} (waited {wait_time}s)")
                 
+                # Handle function calls when agent requires action
+                if run.status == "requires_action":
+                    run = handle_function_calls(run, project_client, thread.id, function_app_url)
+            
+            print(f"Final run status: {run.status} after {wait_time}s")
+            
+            # Handle different completion states
+            if run.status == "completed":
+                # Get the response
+                try:
+                    messages = project_client.agents.messages.list(
+                        thread_id=thread.id,
+                        order="asc"
+                    )
+                except TypeError:
+                    # Fallback without order parameter if not supported
+                    messages = project_client.agents.messages.list(thread_id=thread.id)
+                
+                # Find the assistant's response
+                response_content = None
+                message_list = list(messages)  # Convert ItemPaged to list
+                
+                print(f"Found {len(message_list)} messages in thread")
+                for i, msg in enumerate(message_list):
+                    print(f"  Message {i}: role={msg.role}, content_length={len(msg.content) if msg.content else 0}")
+                    if msg.role == "assistant" and msg.content:
+                        response_content = msg.content[0].text.value if msg.content else None
+                        break
+                
+                if response_content:
+                    print(f"✓ Agent responded successfully")
+                    print(f"Response: {response_content[:200]}..." if len(response_content or "") > 200 else f"Response: {response_content}")
+                    
+                    return {
+                        "success": True,
+                        "response": response_content,
+                        "run_status": run.status,
+                        "execution_time": wait_time
+                    }
+                else:
+                    print(f"✗ No assistant response found in messages")
+                    return {
+                        "success": False,
+                        "error": "No assistant response found in thread messages",
+                        "run_status": run.status,
+                        "execution_time": wait_time
+                    }
+            
+            elif run.status == "failed":
+                error_details = getattr(run, 'last_error', None)
+                error_message = f"Run failed: {error_details}" if error_details else "Run failed with unknown error"
+                print(f"✗ {error_message}")
+                
+                # Check if failure is due to deployment availability
+                if error_details and "invalid_deployment" in str(error_details).lower() and test_attempt < max_test_retries:
+                    print(f"⚠️  Model deployment not ready for run execution (test attempt {test_attempt + 1}/{max_test_retries + 1})")
+                    print(f"   Waiting {test_retry_delay} seconds for deployment to become available...")
+                    time.sleep(test_retry_delay)
+                    test_retry_delay *= 1.5  # Exponential backoff
+                    continue  # Retry the entire test
+                else:
+                    return {
+                        "success": False,
+                        "error": error_message,
+                        "run_status": run.status,
+                        "execution_time": wait_time
+                    }
+            
+            elif run.status in ["queued", "in_progress", "requires_action"]:
+                print(f"✗ Run timed out after {max_wait_time}s with status: {run.status}")
                 return {
-                    "success": True,
-                    "response": response_content,
+                    "success": False,
+                    "error": f"Run timed out after {max_wait_time}s with status: {run.status}",
                     "run_status": run.status,
                     "execution_time": wait_time
                 }
             else:
-                print(f"✗ No assistant response found in messages")
+                print(f"✗ Agent completed with unexpected status: {run.status}")
                 return {
                     "success": False,
-                    "error": "No assistant response found in thread messages",
+                    "error": f"Agent run completed with unexpected status: {run.status}",
                     "run_status": run.status,
                     "execution_time": wait_time
                 }
-        elif run.status == "failed":
-            error_details = getattr(run, 'last_error', None)
-            error_message = f"Run failed: {error_details}" if error_details else "Run failed with unknown error"
-            print(f"✗ {error_message}")
-            return {
-                "success": False,
-                "error": error_message,
-                "run_status": run.status,
-                "execution_time": wait_time
-            }
-        elif run.status in ["queued", "in_progress", "requires_action"]:
-            print(f"✗ Run timed out after {max_wait_time}s with status: {run.status}")
-            return {
-                "success": False,
-                "error": f"Run timed out after {max_wait_time}s with status: {run.status}",
-                "run_status": run.status,
-                "execution_time": wait_time
-            }
-        else:
-            print(f"✗ Agent completed with unexpected status: {run.status}")
-            return {
-                "success": False,
-                "error": f"Agent run completed with unexpected status: {run.status}",
-                "run_status": run.status,
-                "execution_time": wait_time
-            }
+                
+        except Exception as e:
+            error_str = str(e).lower()
+            print(f"✗ Error testing agent: {str(e)}")
             
-    except Exception as e:
-        print(f"✗ Error testing agent: {str(e)}")
-        return {
-            "success": False,
-            "error": str(e)
-        }
-
-
+            # Check if error is deployment-related and we can retry
+            if "invalid_deployment" in error_str and test_attempt < max_test_retries:
+                print(f"⚠️  Model deployment error during test (attempt {test_attempt + 1}/{max_test_retries + 1})")
+                print(f"   Waiting {test_retry_delay} seconds for deployment to become available...")
+                time.sleep(test_retry_delay)
+                test_retry_delay *= 1.5  # Exponential backoff
+                continue  # Retry the entire test
+            else:
+                return {
+                    "success": False,
+                    "error": str(e)
+                }
+    
+    # If we get here, all retry attempts failed
+    return {
+        "success": False,
+        "error": f"Test failed after {max_test_retries + 1} attempts - model deployment may not be ready",
+        "run_status": "failed",
+        "execution_time": 0
+    }
 def main():
     """Main function to create the agent"""
     # Get environment variables

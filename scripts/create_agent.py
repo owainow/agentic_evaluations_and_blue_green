@@ -239,112 +239,179 @@ def test_agent_weather_query(project_client, agent_id, test_query="What's the we
     print(f"\n--- Testing Agent with Weather Query ---")
     print(f"Query: {test_query}")
     
-    try:
-        # Create a thread for testing
-        thread = project_client.agents.threads.create()
-        print(f"Created test thread: {thread.id}")
-        
-        # Send the test message
-        message = project_client.agents.messages.create(
-            thread_id=thread.id,
-            role="user",
-            content=test_query
-        )
-        
-        # Create and poll the run
-        run = project_client.agents.runs.create(
-            thread_id=thread.id,
-            agent_id=agent_id
-        )
-        print(f"Created run: {run.id}")
-        
-        # Poll for completion and handle function calls
-        while run.status in ["queued", "in_progress", "requires_action"]:
-            time.sleep(1)
-            run = project_client.agents.runs.get(thread_id=thread.id, run_id=run.id)
-            print(f"Run status: {run.status}")
-            
-            if run.status == "requires_action":
-                print("Agent requires function call...")
-                tool_calls = run.required_action.submit_tool_outputs.tool_calls
-                tool_outputs = []
-                
-                for tool_call in tool_calls:
-                    if tool_call.function.name == "get_weather":
-                        print(f"  Calling get_weather with args: {tool_call.function.arguments}")
-                        args = json.loads(tool_call.function.arguments)
-                        output = get_weather(
-                            location=args.get("location", ""),
-                            unit=args.get("unit", "celsius")
-                        )
-                        print(f"  Function returned: {output}")
-                        tool_outputs.append({
-                            "tool_call_id": tool_call.id,
-                            "output": output
-                        })
-                    elif tool_call.function.name == "get_news_articles":
-                        print(f"  Calling get_news_articles with args: {tool_call.function.arguments}")
-                        args = json.loads(tool_call.function.arguments)
-                        output = get_news_articles(
-                            topic=args.get("topic", ""),
-                            max_articles=args.get("max_articles", 5)
-                        )
-                        print(f"  Function returned: {output}")
-                        tool_outputs.append({
-                            "tool_call_id": tool_call.id,
-                            "output": output
-                        })
-                
-                # Submit the tool outputs
-                run = project_client.agents.runs.submit_tool_outputs(
-                    thread_id=thread.id,
-                    run_id=run.id,
-                    tool_outputs=tool_outputs
-                )
-        
-        print(f"Run completed with status: {run.status}")
-        
-        # Get the agent's response
-        messages = project_client.agents.messages.list(thread_id=thread.id)
-        response_text = None
-        
-        for msg in messages:
-            if msg.role == "assistant" and msg.content:
-                # Get the text content
-                for content_item in msg.content:
-                    if hasattr(content_item, 'text') and hasattr(content_item.text, 'value'):
-                        response_text = content_item.text.value
-                        break
-                if response_text:
-                    break
-        
-        print(f"\n--- Agent Response ---")
-        print(response_text)
-        
-        # Check if response is valid JSON
-        is_valid_json = False
-        parsed_json = None
+    # Outer retry loop for deployment availability
+    max_test_retries = 3
+    test_retry_delay = 45  # seconds - longer delay for model deployment readiness
+    
+    for test_attempt in range(max_test_retries + 1):
         try:
-            parsed_json = json.loads(response_text)
-            is_valid_json = True
-            print("\n✓ Response is valid JSON")
-        except:
-            print("\n✗ Response is NOT valid JSON")
-        
-        return {
-            "success": True,
-            "response": response_text,
-            "is_valid_json": is_valid_json,
-            "parsed_json": parsed_json,
-            "run_status": run.status
-        }
-        
-    except Exception as e:
-        print(f"✗ Error testing agent: {str(e)}")
-        return {
-            "success": False,
-            "error": str(e)
-        }
+            # Create a thread for testing
+            thread = project_client.agents.threads.create()
+            print(f"Created test thread: {thread.id}")
+            
+            # Send the test message
+            message = project_client.agents.messages.create(
+                thread_id=thread.id,
+                role="user",
+                content=test_query
+            )
+            
+            # Create run with retry for deployment availability
+            run = None
+            max_retries = 3
+            retry_delay = 30  # seconds
+            
+            for attempt in range(max_retries + 1):
+                try:
+                    run = project_client.agents.runs.create(
+                        thread_id=thread.id,
+                        agent_id=agent_id
+                    )
+                    print(f"Created run: {run.id}")
+                    break
+                except Exception as e:
+                    error_str = str(e).lower()
+                    if "invalid_deployment" in error_str and attempt < max_retries:
+                        print(f"⚠️  Model deployment not ready for run creation (attempt {attempt + 1}/{max_retries + 1})")
+                        print(f"   Waiting {retry_delay} seconds for deployment to become available...")
+                        time.sleep(retry_delay)
+                        retry_delay *= 1.5  # Exponential backoff
+                    else:
+                        raise
+            
+            if run is None:
+                if test_attempt < max_test_retries:
+                    print(f"⚠️  Failed to create run, will retry entire test (attempt {test_attempt + 1}/{max_test_retries + 1})")
+                    time.sleep(test_retry_delay)
+                    test_retry_delay *= 1.5
+                    continue
+                else:
+                    return {
+                        "success": False,
+                        "error": "Failed to create run after multiple attempts",
+                        "run_status": "failed"
+                    }
+            
+            # Poll for completion and handle function calls
+            while run.status in ["queued", "in_progress", "requires_action"]:
+                time.sleep(1)
+                run = project_client.agents.runs.get(thread_id=thread.id, run_id=run.id)
+                print(f"Run status: {run.status}")
+                
+                if run.status == "requires_action":
+                    print("Agent requires function call...")
+                    tool_calls = run.required_action.submit_tool_outputs.tool_calls
+                    tool_outputs = []
+                    
+                    for tool_call in tool_calls:
+                        if tool_call.function.name == "get_weather":
+                            print(f"  Calling get_weather with args: {tool_call.function.arguments}")
+                            args = json.loads(tool_call.function.arguments)
+                            output = get_weather(
+                                location=args.get("location", ""),
+                                unit=args.get("unit", "celsius")
+                            )
+                            print(f"  Function returned: {output}")
+                            tool_outputs.append({
+                                "tool_call_id": tool_call.id,
+                                "output": output
+                            })
+                        elif tool_call.function.name == "get_news_articles":
+                            print(f"  Calling get_news_articles with args: {tool_call.function.arguments}")
+                            args = json.loads(tool_call.function.arguments)
+                            output = get_news_articles(
+                                topic=args.get("topic", ""),
+                                max_articles=args.get("max_articles", 5)
+                            )
+                            print(f"  Function returned: {output}")
+                            tool_outputs.append({
+                                "tool_call_id": tool_call.id,
+                                "output": output
+                            })
+                    
+                    # Submit the tool outputs
+                    run = project_client.agents.runs.submit_tool_outputs(
+                        thread_id=thread.id,
+                        run_id=run.id,
+                        tool_outputs=tool_outputs
+                    )
+            
+            print(f"Run completed with status: {run.status}")
+            
+            # Check if run failed due to deployment issues
+            if run.status == "failed":
+                error_details = getattr(run, 'last_error', None)
+                if error_details and "invalid_deployment" in str(error_details).lower() and test_attempt < max_test_retries:
+                    print(f"⚠️  Model deployment not ready for run execution (test attempt {test_attempt + 1}/{max_test_retries + 1})")
+                    print(f"   Waiting {test_retry_delay} seconds for deployment to become available...")
+                    time.sleep(test_retry_delay)
+                    test_retry_delay *= 1.5  # Exponential backoff
+                    continue  # Retry the entire test
+                else:
+                    return {
+                        "success": False,
+                        "error": f"Run failed: {error_details}",
+                        "run_status": run.status
+                    }
+            
+            # Get the agent's response
+            messages = project_client.agents.messages.list(thread_id=thread.id)
+            response_text = None
+            
+            for msg in messages:
+                if msg.role == "assistant" and msg.content:
+                    # Get the text content
+                    for content_item in msg.content:
+                        if hasattr(content_item, 'text') and hasattr(content_item.text, 'value'):
+                            response_text = content_item.text.value
+                            break
+                    if response_text:
+                        break
+            
+            print(f"\n--- Agent Response ---")
+            print(response_text)
+            
+            # Check if response is valid JSON
+            is_valid_json = False
+            parsed_json = None
+            try:
+                parsed_json = json.loads(response_text)
+                is_valid_json = True
+                print("\n✓ Response is valid JSON")
+            except:
+                print("\n✗ Response is NOT valid JSON")
+            
+            return {
+                "success": True,
+                "response": response_text,
+                "is_valid_json": is_valid_json,
+                "parsed_json": parsed_json,
+                "run_status": run.status
+            }
+            
+        except Exception as e:
+            error_str = str(e).lower()
+            print(f"✗ Error testing agent: {str(e)}")
+            
+            # Check if error is deployment-related and we can retry
+            if "invalid_deployment" in error_str and test_attempt < max_test_retries:
+                print(f"⚠️  Model deployment error during test (attempt {test_attempt + 1}/{max_test_retries + 1})")
+                print(f"   Waiting {test_retry_delay} seconds for deployment to become available...")
+                time.sleep(test_retry_delay)
+                test_retry_delay *= 1.5  # Exponential backoff
+                continue  # Retry the entire test
+            else:
+                return {
+                    "success": False,
+                    "error": str(e)
+                }
+    
+    # If we get here, all retry attempts failed
+    return {
+        "success": False,
+        "error": f"Test failed after {max_test_retries + 1} attempts - model deployment may not be ready",
+        "run_status": "failed"
+    }
 
 def main():
     """Main entry point for the script"""
