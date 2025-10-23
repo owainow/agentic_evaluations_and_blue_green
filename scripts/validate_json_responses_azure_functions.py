@@ -195,14 +195,17 @@ def run_agent_test(project_client, agent_id, query: str, expected_structure: dic
             limit=1
         )
         
-        if not messages.data or messages.data[0].role != "assistant":
+        # Convert ItemPaged to list to access messages
+        message_list = list(messages)
+        
+        if not message_list or message_list[0].role != "assistant":
             return {
                 "success": False,
                 "error": "No assistant response found",
                 "execution_time": time.time() - start_time
             }
         
-        response_content = messages.data[0].content[0].text.value if messages.data[0].content else ""
+        response_content = message_list[0].content[0].text.value if message_list[0].content else ""
         
         # Validate JSON format
         try:

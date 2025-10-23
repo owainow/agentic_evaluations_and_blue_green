@@ -69,7 +69,7 @@ on:
         description: 'Instructions for the agent'
         required: true
         type: string
-        default: 'You are an agent that provides responses in JSON only. You are to follow a standard JSON request format with a "response" field containing the answer.'
+        default: 'You are an agent that provides responses in JSON only. You are to follow a standard JSON request format with a "response" field containing the answer. For weather queries you must always reply with a strucutred JSON response of: field: location field: temperature field: temperature_unit field: condition field: humidity_percent field: wind_speed_kmh field: timestamp. For news queries you must always reply with field: timestamp field: articles field: article_count field: topic '
       
       run_evaluation:
         description: 'Run evaluation after agent creation'

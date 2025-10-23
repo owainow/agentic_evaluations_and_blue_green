@@ -228,8 +228,8 @@ def call_agent_and_validate(
         
         response_text = None
         
-        # Find the assistant's response
-        message_list = messages.data if hasattr(messages, 'data') else messages
+        # Find the assistant's response - convert ItemPaged to list
+        message_list = list(messages)
         for msg in message_list:
             if msg.role == "assistant" and msg.content:
                 for content_item in msg.content:

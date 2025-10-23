@@ -20,6 +20,9 @@ param environment string = 'dev'
 @description('Custom name for the Function App (optional)')
 param functionAppName string = ''
 
+@description('GitHub Actions Service Principal Object ID for role assignments (optional)')
+param githubActionsServicePrincipalId string = ''
+
 @description('Tags to apply to all resources')
 param tags object = {
   Environment: environment
@@ -278,6 +281,7 @@ var storageBlobDataContributorRoleId = 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
 var storageQueueDataContributorRoleId = '974c5e8b-45b9-4653-ba55-5f855dd0fb88'
 var storageTableDataContributorRoleId = '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3'
 var monitoringMetricsPublisherRoleId = '3913510d-42f4-4e42-8a64-420c390055eb'
+var azureAIFoundryAgentCreatorRoleId = '76ddb49b-0538-4c6b-9861-5b22c6b5e8ce' // Custom role for agent creation
 
 // User-assigned identity needs Storage Blob Data Owner
 resource roleAssignmentBlobDataOwner 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
@@ -336,6 +340,18 @@ resource roleAssignmentAppInsights 'Microsoft.Authorization/roleAssignments@2022
     principalId: userAssignedIdentity.properties.principalId
     principalType: 'ServicePrincipal'
     description: 'Grants managed identity access to publish metrics to Application Insights'
+  }
+}
+
+// Role assignment for Azure AI Foundry Agent Creator (custom role)
+resource roleAssignmentAIFoundryAgentCreator 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(subscription().id, aiFoundry.id, userAssignedIdentity.id, azureAIFoundryAgentCreatorRoleId)
+  scope: aiFoundry
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', azureAIFoundryAgentCreatorRoleId)
+    principalId: userAssignedIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+    description: 'Grants managed identity access to create and manage agents in Azure AI Foundry'
   }
 }
 
