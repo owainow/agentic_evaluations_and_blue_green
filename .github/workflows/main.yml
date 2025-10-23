@@ -86,7 +86,7 @@ jobs:
           agent-ids: ${{ inputs.agent_id }}
           data-path: ${{ github.workspace }}/evaluations/${{ inputs.data_file }}
         env:
-          AGENT_FUNCTIONS_MODULE: agent_functions
+          FUNCTION_APP_URL: ${{ inputs.function_app_url }}
 
   json-validation:
     name: JSON Response Validation
