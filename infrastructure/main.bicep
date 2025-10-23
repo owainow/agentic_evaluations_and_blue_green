@@ -220,8 +220,8 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
       APPLICATIONINSIGHTS_AUTHENTICATION_STRING: 'ClientId=${userAssignedIdentity.properties.clientId};Authorization=AAD'
       PYTHON_ISOLATE_WORKER_DEPENDENCIES: '1'
       // Enable detailed logging
-      FUNCTIONS_WORKER_RUNTIME: 'python'
       AzureWebJobsDisableHomepage: 'true'
+      // Note: FUNCTIONS_WORKER_RUNTIME is automatically set by Flex Consumption plan
       // Note: ENABLE_ORYX_BUILD and SCM_DO_BUILD_DURING_DEPLOYMENT are not supported in Flex Consumption
       // Build process is handled by the function app deployment command instead
     }
