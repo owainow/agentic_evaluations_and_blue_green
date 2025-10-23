@@ -82,13 +82,21 @@ def validate_json_response(response_text: str) -> Dict[str, Any]:
         result["is_valid_json"] = True
         result["parsed_data"] = parsed
         
-        # Check for weather data fields
+        # Check for weather data fields - handle both direct and nested responses
         if isinstance(parsed, dict):
             weather_fields = ["location", "temperature", "condition"]
             news_fields = ["topic", "articles"]
             
+            # Check direct fields first
             has_weather = all(field in parsed for field in weather_fields)
             has_news = all(field in parsed for field in news_fields)
+            
+            # If not found directly, check if nested under 'response' key
+            if not has_weather and not has_news and "response" in parsed and isinstance(parsed["response"], dict):
+                response_data = parsed["response"]
+                has_weather = all(field in response_data for field in weather_fields)
+                has_news = all(field in response_data for field in news_fields)
+            
             result["has_required_fields"] = has_weather or has_news
             
             if has_weather:
@@ -137,17 +145,19 @@ def call_agent_and_validate(
     try:
         # Create thread
         thread = project_client.agents.threads.create()
+        thread_id = thread.id
+        print(f"    📝 Thread ID: {thread_id}")
         
         # Send message
         message = project_client.agents.messages.create(
-            thread_id=thread.id,
+            thread_id=thread_id,
             role="user",
             content=query
         )
         
         # Create and process run
         run = project_client.agents.runs.create(
-            thread_id=thread.id,
+            thread_id=thread_id,
             agent_id=agent_id
         )
         
@@ -160,12 +170,12 @@ def call_agent_and_validate(
             time.sleep(2)
             try:
                 run = project_client.agents.runs.retrieve(
-                    thread_id=thread.id,
+                    thread_id=thread_id,
                     run_id=run.id
                 )
             except AttributeError:
                 # Fallback to .get() if retrieve doesn't exist
-                run = project_client.agents.runs.get(thread_id=thread.id, run_id=run.id)
+                run = project_client.agents.runs.get(thread_id=thread_id, run_id=run.id)
             
             iteration += 1
             
@@ -201,7 +211,7 @@ def call_agent_and_validate(
                     
                     # Submit tool outputs back to the agent
                     run = project_client.agents.runs.submit_tool_outputs(
-                        thread_id=thread.id,
+                        thread_id=thread_id,
                         run_id=run.id,
                         tool_outputs=tool_outputs
                     )
@@ -213,18 +223,19 @@ def call_agent_and_validate(
                 "success": False,
                 "error": f"Timeout after {max_iterations * 2} seconds",
                 "function_calls": function_calls_made,
-                "final_status": run.status
+                "final_status": run.status,
+                "thread_id": thread_id
             }
         
         # Get response
         try:
             messages = project_client.agents.messages.list(
-                thread_id=thread.id,
+                thread_id=thread_id,
                 order="asc"
             )
         except TypeError:
             # Fallback if order parameter not supported
-            messages = project_client.agents.messages.list(thread_id=thread.id)
+            messages = project_client.agents.messages.list(thread_id=thread_id)
         
         response_text = None
         
@@ -262,7 +273,8 @@ def call_agent_and_validate(
             "validation": validation,
             "function_calls": function_calls_made,
             "passed": passed,
-            "run_status": run.status
+            "run_status": run.status,
+            "thread_id": thread_id
         }
         
     except Exception as e:
@@ -270,7 +282,8 @@ def call_agent_and_validate(
             "query": query,
             "expected_type": expected_type,
             "success": False,
-            "error": str(e)
+            "error": str(e),
+            "thread_id": thread_id if 'thread_id' in locals() else None
         }
 
 
@@ -309,12 +322,48 @@ def run_json_validation_tests(
         
         # Print result
         if result.get("success"):
+            thread_id = result.get("thread_id", "unknown")
+            print(f"    🧵 Thread: {thread_id}")
+            
             if result.get("passed"):
-                print(f"    ✅ PASS - Valid JSON: {result['validation']['is_valid_json']}")
+                print(f"    ✅ PASS - Valid JSON response")
+                validation = result.get("validation", {})
+                if validation.get("data_type"):
+                    print(f"       Data type: {validation['data_type']}")
             else:
                 print(f"    ❌ FAIL - Expected {expected_type}, validation failed")
+                validation = result.get("validation", {})
+                
+                if validation.get("is_valid_json"):
+                    print(f"       JSON is valid but structure incorrect")
+                    parsed_data = validation.get("parsed_data", {})
+                    
+                    # Check what fields are missing for weather
+                    if expected_type == "weather":
+                        weather_fields = ["location", "temperature", "temperature_unit", "condition", "humidity_percent", "wind_speed_kmh", "timestamp"]
+                        
+                        # Check direct fields
+                        missing_fields = []
+                        for field in weather_fields:
+                            if field not in parsed_data:
+                                # Check if nested under 'response'
+                                if "response" in parsed_data and isinstance(parsed_data["response"], dict):
+                                    if field not in parsed_data["response"]:
+                                        missing_fields.append(field)
+                                else:
+                                    missing_fields.append(field)
+                        
+                        if missing_fields:
+                            for field in missing_fields:
+                                print(f"       • Missing required field: {field}")
+                        else:
+                            print(f"       • All required fields present - checking data structure...")
+                else:
+                    print(f"       Invalid JSON: {validation.get('error', 'Unknown JSON error')}")
         else:
             print(f"    ❌ ERROR - {result.get('error', 'Unknown error')}")
+            if result.get("thread_id"):
+                print(f"    🧵 Thread: {result['thread_id']}")
     
     return results
 

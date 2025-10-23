@@ -9,7 +9,10 @@
     "Microsoft.CognitiveServices/accounts/AIServices/agents/write",
     "Microsoft.CognitiveServices/accounts/AIServices/agents/read",
     "Microsoft.CognitiveServices/accounts/AIServices/assets/write",
-    "Microsoft.CognitiveServices/accounts/AIServices/assets/read"
+    "Microsoft.CognitiveServices/accounts/AIServices/assets/read",
+    "Microsoft.CognitiveServices/accounts/AIServices/evaluations/read",
+    "Microsoft.CognitiveServices/accounts/AIServices/evaluations/write",
+    "Microsoft.CognitiveServices/accounts/OpenAI/deployments/chat/completions/action"
   ],
   "NotDataActions": [],
   "AssignableScopes": [

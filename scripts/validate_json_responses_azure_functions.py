@@ -152,17 +152,19 @@ def run_agent_test(project_client, agent_id, query: str, expected_structure: dic
         
         # Create thread
         thread = project_client.agents.threads.create()
+        thread_id = thread.id
+        print(f"  📝 Thread ID: {thread_id}")
         
         # Send message
         message = project_client.agents.messages.create(
-            thread_id=thread.id,
+            thread_id=thread_id,
             role="user",
             content=query
         )
         
         # Run agent
         run = project_client.agents.runs.create(
-            thread_id=thread.id,
+            thread_id=thread_id,
             agent_id=agent_id
         )
         
@@ -171,7 +173,7 @@ def run_agent_test(project_client, agent_id, query: str, expected_structure: dic
         while run.status in ["queued", "in_progress", "requires_action"] and (time.time() - start_time) < timeout:
             time.sleep(2)
             run = project_client.agents.runs.get(
-                thread_id=thread.id,
+                thread_id=thread_id,
                 run_id=run.id
             )
             
@@ -179,18 +181,19 @@ def run_agent_test(project_client, agent_id, query: str, expected_structure: dic
                 print("  Agent is calling Azure Functions...")
                 function_app_url = os.getenv('FUNCTION_APP_URL')
                 if function_app_url:
-                    run = handle_function_calls(run, project_client, thread.id, function_app_url)
+                    run = handle_function_calls(run, project_client, thread_id, function_app_url)
         
         if run.status != "completed":
             return {
                 "success": False,
                 "error": f"Agent run failed with status: {run.status}",
-                "execution_time": time.time() - start_time
+                "execution_time": time.time() - start_time,
+                "thread_id": thread_id
             }
         
         # Get response
         messages = project_client.agents.messages.list(
-            thread_id=thread.id,
+            thread_id=thread_id,
             order="desc",
             limit=1
         )
@@ -217,18 +220,28 @@ def run_agent_test(project_client, agent_id, query: str, expected_structure: dic
             is_valid_json = False
             json_error = str(e)
         
-        # Validate expected structure
+        # Validate expected structure - handle both direct and nested responses  
         structure_valid = True
         structure_errors = []
         
         if is_valid_json and expected_structure and parsed_json:
+            # Check direct fields first
+            data_to_check = parsed_json
+            
+            # If not found directly, check if nested under 'response' key
+            if "response" in parsed_json and isinstance(parsed_json["response"], dict):
+                # Check if the expected fields are in the nested response
+                nested_has_fields = all(key in parsed_json["response"] for key in expected_structure.keys())
+                if nested_has_fields:
+                    data_to_check = parsed_json["response"]
+            
             for key, expected_type in expected_structure.items():
-                if key not in parsed_json:
+                if key not in data_to_check:
                     structure_valid = False
                     structure_errors.append(f"Missing required field: {key}")
-                elif not isinstance(parsed_json[key], expected_type):
+                elif not isinstance(data_to_check[key], expected_type):
                     structure_valid = False
-                    structure_errors.append(f"Field {key} has wrong type: expected {expected_type.__name__}, got {type(parsed_json[key]).__name__}")
+                    structure_errors.append(f"Field {key} has wrong type: expected {expected_type.__name__}, got {type(data_to_check[key]).__name__}")
         
         return {
             "success": True,
@@ -239,14 +252,16 @@ def run_agent_test(project_client, agent_id, query: str, expected_structure: dic
             "parsed_json": parsed_json,
             "structure_valid": structure_valid,
             "structure_errors": structure_errors,
-            "execution_time": time.time() - start_time
+            "execution_time": time.time() - start_time,
+            "thread_id": thread_id
         }
         
     except Exception as e:
         return {
             "success": False,
             "error": str(e),
-            "execution_time": time.time() - start_time if 'start_time' in locals() else 0
+            "execution_time": time.time() - start_time if 'start_time' in locals() else 0,
+            "thread_id": thread_id if 'thread_id' in locals() else None
         }
 
 
@@ -400,6 +415,9 @@ def main():
         results.append(result)
         
         if result['success']:
+            thread_id = result.get('thread_id', 'unknown')
+            print(f"   🧵 Thread: {thread_id}")
+            
             if result['is_valid_json']:
                 if result['structure_valid'] or test_case['expected_structure'] is None:
                     print(f"   ✓ PASS - JSON valid, structure correct")
@@ -411,6 +429,8 @@ def main():
                 print(f"   ✗ FAIL - Invalid JSON: {result['json_error']}")
         else:
             print(f"   ✗ FAIL - Execution error: {result['error']}")
+            if result.get('thread_id'):
+                print(f"   🧵 Thread: {result['thread_id']}")
         
         print(f"   Execution time: {result['execution_time']:.2f}s")
     

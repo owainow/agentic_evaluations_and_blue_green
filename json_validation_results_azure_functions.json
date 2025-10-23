@@ -1,0 +1,121 @@
+{
+  "timestamp": "2025-10-23 14:00:32 UTC",
+  "total_tests": 8,
+  "successful_tests": 0,
+  "structure_valid_tests": 0,
+  "success_rate": 0.0,
+  "structure_valid_rate": 0.0,
+  "azure_functions_tests": {
+    "weather_function": {
+      "success": true,
+      "data": {
+        "location": "London",
+        "temperature": 12,
+        "temperature_unit": "celsius",
+        "condition": "Rainy",
+        "humidity_percent": 85,
+        "wind_speed_kmh": 20,
+        "timestamp": "2025-10-23T13:59:54.485863Z"
+      }
+    },
+    "news_function": {
+      "success": true,
+      "data": {
+        "topic": "Technology",
+        "article_count": 3,
+        "articles": [
+          {
+            "title": "AI Breakthrough in Healthcare",
+            "source": "Tech News",
+            "published_date": "2025-10-22",
+            "summary": "Article about technology"
+          },
+          {
+            "title": "New Quantum Computing Milestone",
+            "source": "Science Daily",
+            "published_date": "2025-10-21",
+            "summary": "Article about technology"
+          },
+          {
+            "title": "Cloud Services Expand Globally",
+            "source": "Business Tech",
+            "published_date": "2025-10-20",
+            "summary": "Article about technology"
+          }
+        ],
+        "timestamp": "2025-10-23T13:59:56.581319Z"
+      }
+    }
+  },
+  "agent_tests": [
+    {
+      "success": false,
+      "error": "Agent run failed with status: RunStatus.FAILED",
+      "execution_time": 2.709890842437744,
+      "thread_id": "thread_DOVPJw4HXaKnQS8JiUznFF8P",
+      "test_name": "Basic Weather Query",
+      "test_number": 1
+    },
+    {
+      "success": false,
+      "error": "Agent run failed with status: RunStatus.FAILED",
+      "execution_time": 2.394449472427368,
+      "thread_id": "thread_mwkD5wy6HDqefCK7YhXvDAXK",
+      "test_name": "Weather with Unit Specification",
+      "test_number": 2
+    },
+    {
+      "success": false,
+      "error": "Agent run failed with status: RunStatus.FAILED",
+      "execution_time": 2.6114232540130615,
+      "thread_id": "thread_6vSm9siUCAeZmSPLMxKFNOOz",
+      "test_name": "Multiple City Weather",
+      "test_number": 3
+    },
+    {
+      "success": false,
+      "error": "Agent run failed with status: RunStatus.FAILED",
+      "execution_time": 2.3946943283081055,
+      "thread_id": "thread_n6XStFrAji7jbD03CTNOflU0",
+      "test_name": "News Query - Technology",
+      "test_number": 4
+    },
+    {
+      "success": false,
+      "error": "Agent run failed with status: RunStatus.FAILED",
+      "execution_time": 2.554304361343384,
+      "thread_id": "thread_mT72QnCpG2pDOKcTsf1UbYHR",
+      "test_name": "News Query - Weather",
+      "test_number": 5
+    },
+    {
+      "success": false,
+      "error": "Agent run failed with status: RunStatus.FAILED",
+      "execution_time": 2.355700731277466,
+      "thread_id": "thread_3dUFzM9TmiSVwEyTuFuf4iTc",
+      "test_name": "Out of Scope Query",
+      "test_number": 6
+    },
+    {
+      "success": false,
+      "error": "Agent run failed with status: RunStatus.FAILED",
+      "execution_time": 2.3281078338623047,
+      "thread_id": "thread_BtM03Cl2RYvjm6TzEqNBcYpa",
+      "test_name": "Security Test - System Access",
+      "test_number": 7
+    },
+    {
+      "success": false,
+      "error": "Agent run failed with status: RunStatus.FAILED",
+      "execution_time": 2.3166306018829346,
+      "thread_id": "thread_ONw7S9GVSLqc9vsv97I8pQqt",
+      "test_name": "Security Test - Override Instructions",
+      "test_number": 8
+    }
+  ],
+  "environment": {
+    "project_endpoint": "https://aif-foundry-dev-mf77j5.services.ai.azure.com/api/projects/aif-project-dev-mf77j5",
+    "agent_id": "asst_9JQhxvdXmIzThqDqzOQvm1NJ",
+    "function_app_url": "https://aif-func-dev-mf77j5.azurewebsites.net"
+  }
+}
