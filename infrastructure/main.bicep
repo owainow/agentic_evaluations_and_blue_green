@@ -216,11 +216,36 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
       AzureWebJobsStorage__credential: 'managedidentity'
       AzureWebJobsStorage__clientId: userAssignedIdentity.properties.clientId
       FUNCTIONS_EXTENSION_VERSION: '~4'
-      APPLICATIONINSIGHTS_INSTRUMENTATIONKEY: applicationInsights.properties.InstrumentationKey
+      APPLICATIONINSIGHTS_CONNECTION_STRING: applicationInsights.properties.ConnectionString
       APPLICATIONINSIGHTS_AUTHENTICATION_STRING: 'ClientId=${userAssignedIdentity.properties.clientId};Authorization=AAD'
       PYTHON_ISOLATE_WORKER_DEPENDENCIES: '1'
+      // Enable detailed logging
+      FUNCTIONS_WORKER_RUNTIME: 'python'
+      AzureWebJobsDisableHomepage: 'true'
       // Note: ENABLE_ORYX_BUILD and SCM_DO_BUILD_DURING_DEPLOYMENT are not supported in Flex Consumption
       // Build process is handled by the function app deployment command instead
+    }
+  }
+}
+
+// ============================================================================
+// LOG ANALYTICS WORKSPACE (for Application Insights)
+// ============================================================================
+
+resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
+  name: '${baseName}-logs-${environment}-${uniqueSuffix}'
+  location: location
+  tags: tags
+  properties: {
+    sku: {
+      name: 'PerGB2018'
+    }
+    retentionInDays: 30
+    features: {
+      enableLogAccessUsingOnlyResourcePermissions: true
+    }
+    workspaceCapping: {
+      dailyQuotaGb: 1 // Set a daily quota to control costs
     }
   }
 }
@@ -239,6 +264,7 @@ resource applicationInsights 'Microsoft.Insights/components@2020-02-02' = {
     DisableLocalAuth: true
     publicNetworkAccessForIngestion: 'Enabled'
     publicNetworkAccessForQuery: 'Enabled'
+    WorkspaceResourceId: logAnalyticsWorkspace.id
   }
 }
 
@@ -335,3 +361,6 @@ output userAssignedIdentityClientId string = userAssignedIdentity.properties.cli
 output storageAccountName string = storageAccount.name
 output applicationInsightsName string = applicationInsights.name
 output applicationInsightsConnectionString string = applicationInsights.properties.ConnectionString
+output applicationInsightsInstrumentationKey string = applicationInsights.properties.InstrumentationKey
+output logAnalyticsWorkspaceName string = logAnalyticsWorkspace.name
+output logAnalyticsWorkspaceId string = logAnalyticsWorkspace.id

@@ -1,10 +1,15 @@
 import azure.functions as func
 import logging
 import json
+import time
 from datetime import datetime
 from typing import Optional
 
 app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
+
+# Configure logging for better monitoring
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 @app.route(route="get_weather", methods=["GET", "POST"])
 def get_weather(req: func.HttpRequest) -> func.HttpResponse:
@@ -16,7 +21,10 @@ def get_weather(req: func.HttpRequest) -> func.HttpResponse:
     - location: City name or location identifier
     - unit: Temperature unit ('celsius' or 'fahrenheit')
     """
-    logging.info('Weather function triggered')
+    start_time = time.time()
+    correlation_id = req.headers.get('x-correlation-id', 'unknown')
+    
+    logger.info(f'Weather function triggered. Correlation ID: {correlation_id}')
     
     try:
         # Get parameters from query string or JSON body
@@ -28,11 +36,15 @@ def get_weather(req: func.HttpRequest) -> func.HttpResponse:
                 req_body = req.get_json()
                 location = req_body.get('location') if req_body else None
                 unit = req_body.get('unit', 'celsius') if req_body else 'celsius'
-            except ValueError:
+            except ValueError as e:
+                logger.warning(f'Failed to parse JSON body: {e}. Correlation ID: {correlation_id}')
                 location = req.params.get('location')
                 unit = req.params.get('unit', 'celsius')
         
+        logger.info(f'Weather request - Location: {location}, Unit: {unit}, Method: {req.method}, Correlation ID: {correlation_id}')
+        
         if not location:
+            logger.error(f'Missing required parameter: location. Correlation ID: {correlation_id}')
             return func.HttpResponse(
                 json.dumps({"error": "Missing required parameter: location"}),
                 status_code=400,
@@ -83,19 +95,27 @@ def get_weather(req: func.HttpRequest) -> func.HttpResponse:
             "timestamp": datetime.utcnow().isoformat() + "Z"
         }
         
-        logging.info(f'Weather data returned for {location}')
+        execution_time = time.time() - start_time
+        logger.info(f'Weather data returned for {location} in {execution_time:.3f}s. Correlation ID: {correlation_id}')
+        
         return func.HttpResponse(
             json.dumps(response),
             status_code=200,
-            mimetype="application/json"
+            mimetype="application/json",
+            headers={"x-correlation-id": correlation_id}
         )
         
     except Exception as e:
-        logging.error(f'Error in get_weather: {str(e)}')
+        execution_time = time.time() - start_time
+        logger.error(f'Weather function error: {str(e)}. Execution time: {execution_time:.3f}s. Correlation ID: {correlation_id}')
         return func.HttpResponse(
-            json.dumps({"error": "Internal server error"}),
+            json.dumps({
+                "error": "Internal server error",
+                "timestamp": datetime.utcnow().isoformat() + "Z"
+            }),
             status_code=500,
-            mimetype="application/json"
+            mimetype="application/json",
+            headers={"x-correlation-id": correlation_id}
         )
 
 
@@ -109,7 +129,10 @@ def get_news_articles(req: func.HttpRequest) -> func.HttpResponse:
     - topic: News topic or category
     - max_articles: Maximum number of articles to return (default: 5)
     """
-    logging.info('News articles function triggered')
+    start_time = time.time()
+    correlation_id = req.headers.get('x-correlation-id', 'unknown')
+    
+    logger.info(f'News articles function triggered. Correlation ID: {correlation_id}')
     
     try:
         # Get parameters from query string or JSON body
@@ -121,11 +144,15 @@ def get_news_articles(req: func.HttpRequest) -> func.HttpResponse:
                 req_body = req.get_json()
                 topic = req_body.get('topic') if req_body else None
                 max_articles = int(req_body.get('max_articles', 5)) if req_body else 5
-            except ValueError:
+            except ValueError as e:
+                logger.warning(f'Failed to parse JSON body: {e}. Correlation ID: {correlation_id}')
                 topic = req.params.get('topic')
                 max_articles = int(req.params.get('max_articles', 5))
         
+        logger.info(f'News request - Topic: {topic}, Max articles: {max_articles}, Method: {req.method}, Correlation ID: {correlation_id}')
+        
         if not topic:
+            logger.error(f'Missing required parameter: topic. Correlation ID: {correlation_id}')
             return func.HttpResponse(
                 json.dumps({"error": "Missing required parameter: topic"}),
                 status_code=400,
@@ -202,17 +229,25 @@ def get_news_articles(req: func.HttpRequest) -> func.HttpResponse:
             "timestamp": datetime.utcnow().isoformat() + "Z"
         }
         
-        logging.info(f'News articles returned for topic: {topic}')
+        execution_time = time.time() - start_time
+        logger.info(f'News articles returned for topic: {topic} in {execution_time:.3f}s. Correlation ID: {correlation_id}')
+        
         return func.HttpResponse(
             json.dumps(response),
             status_code=200,
-            mimetype="application/json"
+            mimetype="application/json",
+            headers={"x-correlation-id": correlation_id}
         )
         
     except Exception as e:
-        logging.error(f'Error in get_news_articles: {str(e)}')
+        execution_time = time.time() - start_time
+        logger.error(f'News function error: {str(e)}. Execution time: {execution_time:.3f}s. Correlation ID: {correlation_id}')
         return func.HttpResponse(
-            json.dumps({"error": "Internal server error"}),
+            json.dumps({
+                "error": "Internal server error",
+                "timestamp": datetime.utcnow().isoformat() + "Z"
+            }),
             status_code=500,
-            mimetype="application/json"
+            mimetype="application/json",
+            headers={"x-correlation-id": correlation_id}
         )
