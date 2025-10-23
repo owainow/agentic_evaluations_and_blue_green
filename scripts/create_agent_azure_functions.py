@@ -10,7 +10,47 @@ import json
 import requests
 import time
 from azure.ai.projects import AIProjectClient
+from azure.ai.agents.models import FunctionTool
 from azure.identity import DefaultAzureCredential
+
+
+def get_weather_function(location: str, unit: str = "celsius") -> str:
+    """
+    Function implementation for get_weather that calls Azure Functions
+    This enables enable_auto_function_calls to work properly
+    """
+    function_app_url = os.getenv('FUNCTION_APP_URL')
+    if function_app_url:
+        return call_azure_function("get_weather", {"location": location, "unit": unit}, function_app_url)
+    else:
+        # Fallback mock data
+        return json.dumps({
+            "location": location,
+            "temperature": 20,
+            "temperature_unit": unit,
+            "condition": "Mock Data",
+            "humidity_percent": 50,
+            "wind_speed_kmh": 10,
+            "timestamp": "2025-10-23T12:00:00Z"
+        })
+
+
+def get_news_articles_function(topic: str, max_articles: int = 5) -> str:
+    """
+    Function implementation for get_news_articles that calls Azure Functions
+    This enables enable_auto_function_calls to work properly
+    """
+    function_app_url = os.getenv('FUNCTION_APP_URL')
+    if function_app_url:
+        return call_azure_function("get_news_articles", {"topic": topic, "max_articles": max_articles}, function_app_url)
+    else:
+        # Fallback mock data
+        return json.dumps({
+            "topic": topic,
+            "article_count": 1,
+            "articles": [{"title": f"Mock news about {topic}", "source": "Mock Source", "date": "2025-10-23", "url": "https://example.com"}],
+            "timestamp": "2025-10-23T12:00:00Z"
+        })
 
 
 def create_function_tool_definition():
@@ -220,7 +260,12 @@ def create_agent(
         
         # Create function tool definitions for Azure Functions
         print("Setting up Azure Function tool definitions...")
-        function_tools = create_function_tool_definition()
+        function_tools_definitions = create_function_tool_definition()
+        
+        # Create function tools with actual implementations for enable_auto_function_calls
+        print("Creating FunctionTool with implementations...")
+        user_functions = {get_weather_function, get_news_articles_function}
+        function_tools = FunctionTool(functions=user_functions)
         
         # Enhanced instructions that work with function calling
         enhanced_instructions = f"""{agent_instructions}
@@ -273,7 +318,7 @@ CRITICAL RULES - You MUST follow these without exception:
                     model=model_deployment_name,
                     name=agent_name,
                     instructions=enhanced_instructions,
-                    tools=function_tools,
+                    tools=function_tools.definitions,
                     description=agent_description or f"Weather and news agent using {model_deployment_name} with Azure Functions"
                 )
                 break
@@ -290,11 +335,16 @@ CRITICAL RULES - You MUST follow these without exception:
         if agent is None:
             raise Exception("Failed to create agent after multiple attempts - deployment may not be ready")
         
+        # Enable automatic function calling - this is CRITICAL for Azure Functions integration
+        print("Enabling automatic function calls for Azure Functions...")
+        project_client.agents.enable_auto_function_calls(tools=function_tools)
+        
         print(f"✓ Agent created successfully!")
         print(f"  Agent ID: {agent.id}")
         print(f"  Agent Name: {agent.name}")
         print(f"  Model: {agent.model}")
-        print(f"  Tools: {len(function_tools)} Azure Function(s) enabled")
+        print(f"  Tools: {len(function_tools.definitions)} Azure Function(s) enabled")
+        print(f"  Auto Function Calls: ✓ Enabled")
         
         # Return agent details
         return {
@@ -305,7 +355,8 @@ CRITICAL RULES - You MUST follow these without exception:
             "description": agent.description,
             "function_app_url": function_app_url,
             "created_at": str(agent.created_at) if hasattr(agent, 'created_at') else None,
-            "tools_count": len(function_tools)
+            "tools_count": len(function_tools.definitions),
+            "auto_function_calls_enabled": True
         }
         
     except Exception as e:

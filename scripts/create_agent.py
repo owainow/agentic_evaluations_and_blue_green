@@ -200,11 +200,16 @@ CRITICAL RULES - You MUST follow these without exception:
             description=agent_description or f"Weather and news agent using {model_deployment_name}"
         )
         
+        # Enable automatic function calling - this is CRITICAL for function execution
+        print("Enabling automatic function calls...")
+        project_client.agents.enable_auto_function_calls(tools=function_tools)
+        
         print(f"✓ Agent created successfully!")
         print(f"  Agent ID: {agent.id}")
         print(f"  Agent Name: {agent.name}")
         print(f"  Model: {agent.model}")
         print(f"  Tools: {len(function_tools.definitions)} function(s) enabled")
+        print(f"  Auto Function Calls: ✓ Enabled")
         
         # Return agent details
         return {
@@ -214,7 +219,8 @@ CRITICAL RULES - You MUST follow these without exception:
             "instructions": agent.instructions,
             "description": agent.description,
             "created_at": str(agent.created_at) if hasattr(agent, 'created_at') else None,
-            "tools_count": len(function_tools.definitions)
+            "tools_count": len(function_tools.definitions),
+            "auto_function_calls_enabled": True
         }
         
     except Exception as e:
