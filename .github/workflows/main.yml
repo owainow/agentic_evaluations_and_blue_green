@@ -114,7 +114,7 @@ jobs:
           AGENT_NAME: 'Weather News Agent'
           FUNCTION_APP_URL: ${{ inputs.function_app_url }}
         run: |
-          python scripts/validate_json_responses.py
+          python scripts/validate_json_responses_azure_functions.py
 
       - name: Upload JSON Validation Results
         if: always()

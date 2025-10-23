@@ -347,7 +347,10 @@ def test_agent_with_azure_functions(project_client, agent_id, function_app_url, 
             # Handle function calls when agent requires action
             if run.status == "requires_action":
                 run = handle_function_calls(run, project_client, thread.id, function_app_url)
-                
+        
+        print(f"Final run status: {run.status} after {wait_time}s")
+        
+        # Handle different completion states
         if run.status == "completed":
             # Get the response
             try:
@@ -362,25 +365,55 @@ def test_agent_with_azure_functions(project_client, agent_id, function_app_url, 
             # Find the assistant's response
             response_content = None
             message_list = messages.data if hasattr(messages, 'data') else messages
-            for msg in message_list:
+            
+            print(f"Found {len(message_list)} messages in thread")
+            for i, msg in enumerate(message_list):
+                print(f"  Message {i}: role={msg.role}, content_length={len(msg.content) if msg.content else 0}")
                 if msg.role == "assistant" and msg.content:
                     response_content = msg.content[0].text.value if msg.content else None
                     break
             
-            print(f"✓ Agent responded successfully")
-            print(f"Response: {response_content[:200]}..." if len(response_content or "") > 200 else f"Response: {response_content}")
-            
+            if response_content:
+                print(f"✓ Agent responded successfully")
+                print(f"Response: {response_content[:200]}..." if len(response_content or "") > 200 else f"Response: {response_content}")
+                
+                return {
+                    "success": True,
+                    "response": response_content,
+                    "run_status": run.status,
+                    "execution_time": wait_time
+                }
+            else:
+                print(f"✗ No assistant response found in messages")
+                return {
+                    "success": False,
+                    "error": "No assistant response found in thread messages",
+                    "run_status": run.status,
+                    "execution_time": wait_time
+                }
+        elif run.status == "failed":
+            error_details = getattr(run, 'last_error', None)
+            error_message = f"Run failed: {error_details}" if error_details else "Run failed with unknown error"
+            print(f"✗ {error_message}")
             return {
-                "success": True,
-                "response": response_content,
+                "success": False,
+                "error": error_message,
+                "run_status": run.status,
+                "execution_time": wait_time
+            }
+        elif run.status in ["queued", "in_progress", "requires_action"]:
+            print(f"✗ Run timed out after {max_wait_time}s with status: {run.status}")
+            return {
+                "success": False,
+                "error": f"Run timed out after {max_wait_time}s with status: {run.status}",
                 "run_status": run.status,
                 "execution_time": wait_time
             }
         else:
-            print(f"✗ Agent did not complete successfully. Final status: {run.status}")
+            print(f"✗ Agent completed with unexpected status: {run.status}")
             return {
                 "success": False,
-                "error": f"Agent run failed with status: {run.status}",
+                "error": f"Agent run completed with unexpected status: {run.status}",
                 "run_status": run.status,
                 "execution_time": wait_time
             }
