@@ -223,7 +223,7 @@ jobs:
 
       - name: Install Azure AI SDK
         run: |
-          pip install azure-ai-projects==1.0.0b9 azure-ai-agents==1.1.0 azure-identity requests
+          pip install azure-ai-projects==1.0.0 azure-ai-agents==1.1.0 azure-identity requests
 
       - name: Run JSON Validation with Azure Functions
         env:

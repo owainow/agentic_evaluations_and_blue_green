@@ -274,7 +274,7 @@ jobs:
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install azure-ai-projects==1.0.0 azure-ai-agents==1.1.0 azure-identity requests
+          pip install azure-ai-projects azure-ai-agents azure-identity requests
       
       - name: Create AI Agent with Azure Functions Tools
         id: create_agent
@@ -286,8 +286,6 @@ jobs:
           AGENT_NAME: ${{ inputs.agent_name }}
           AGENT_INSTRUCTIONS: ${{ inputs.agent_instructions }}
           FUNCTION_APP_URL: ${{ steps.function_app.outputs.function_app_url }}
-          AZURE_SUBSCRIPTION_ID: ${{ env.AZURE_SUBSCRIPTION_ID }}
-          AZURE_RESOURCE_GROUP_NAME: ${{ env.RESOURCE_GROUP }}
         run: |
           echo "Creating agent with Azure Functions tools..."
           echo "Model deployment: ${MODEL_DEPLOYMENT_NAME}"

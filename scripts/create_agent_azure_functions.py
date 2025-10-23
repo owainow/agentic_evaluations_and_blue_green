@@ -10,7 +10,7 @@ import json
 import requests
 import time
 from azure.ai.projects import AIProjectClient
-from azure.ai.projects.models import FunctionTool
+from azure.ai.projects.models import FunctionTool, ToolSet
 from azure.identity import DefaultAzureCredential
 
 
@@ -251,65 +251,26 @@ def create_agent(
         # Authenticate using DefaultAzureCredential
         credential = DefaultAzureCredential()
         
-        # Create project client - handle both old and new API patterns
+        # Create project client
         print(f"Connecting to project: {project_endpoint}")
-        
-        try:
-            # Try the old API pattern first (beta versions)
-            project_client = AIProjectClient(
-                endpoint=project_endpoint,
-                credential=credential
-            )
-            print("✓ Connected using endpoint-based API")
-        except TypeError as e:
-            # If that fails, try the new API pattern (stable version)
-            if "missing" in str(e) and "subscription_id" in str(e):
-                print("Note: Endpoint-based API not available, trying new API pattern...")
-                
-                # Parse the project endpoint to extract required information
-                # Expected format: https://{account}.services.ai.azure.com/api/projects/{project_name}
-                # or https://{account}.{region}.services.ai.azure.com/api/projects/{project_name}
-                
-                import urllib.parse
-                parsed_url = urllib.parse.urlparse(project_endpoint)
-                path_parts = parsed_url.path.strip('/').split('/')
-                
-                if len(path_parts) >= 3 and path_parts[-2] == 'projects':
-                    project_name = path_parts[-1]
-                    
-                    # Get subscription ID and resource group from environment or ask user to provide them
-                    subscription_id = os.getenv('AZURE_SUBSCRIPTION_ID')
-                    resource_group_name = os.getenv('AZURE_RESOURCE_GROUP_NAME')
-                    
-                    if not subscription_id:
-                        raise ValueError("AZURE_SUBSCRIPTION_ID environment variable is required for stable API")
-                    if not resource_group_name:
-                        raise ValueError("AZURE_RESOURCE_GROUP_NAME environment variable is required for stable API")
-                    
-                    project_client = AIProjectClient(
-                        credential=credential,
-                        subscription_id=subscription_id,
-                        resource_group_name=resource_group_name,
-                        project_name=project_name
-                    )
-                    print("✓ Connected using subscription-based API")
-                else:
-                    raise ValueError(f"Cannot parse project name from endpoint: {project_endpoint}")
-            else:
-                raise
+        project_client = AIProjectClient(
+            endpoint=project_endpoint,
+            credential=credential
+        )
         
         # Create function tool definitions for Azure Functions
         print("Setting up Azure Function tool definitions...")
         function_tools_definitions = create_function_tool_definition()
         
         # Create function tools with actual implementations for enable_auto_function_calls
-        print("Creating function tools for Azure Functions...")
+        print("Creating FunctionTool with implementations...")
+        user_functions = [get_weather, get_news_articles]  # Use list and correct function names
+        function_tools = FunctionTool(functions=user_functions)
         
-        # Create function tools with the implementations
-        user_functions = [get_weather, get_news_articles]
-        functions = FunctionTool(user_functions)
-        
-        print("Function tools created for modern stable API...")
+        # Initialize agent toolset with user functions - CRITICAL for Azure Functions integration
+        print("Creating ToolSet for enable_auto_function_calls...")
+        toolset = ToolSet()
+        toolset.add(function_tools)
         
         # Enhanced instructions that work with function calling
         enhanced_instructions = f"""{agent_instructions}
@@ -362,7 +323,7 @@ CRITICAL RULES - You MUST follow these without exception:
                     model=model_deployment_name,
                     name=agent_name,
                     instructions=enhanced_instructions,
-                    tools=functions.definitions,
+                    tools=function_tools.definitions,
                     description=agent_description or f"Weather and news agent using {model_deployment_name} with Azure Functions"
                 )
                 break
@@ -381,42 +342,14 @@ CRITICAL RULES - You MUST follow these without exception:
         
         # Enable automatic function calling - this is CRITICAL for Azure Functions integration
         print("Enabling automatic function calls for Azure Functions...")
-        
-        # Try multiple approaches for different SDK versions
-        function_calling_enabled = False
-        
-        # Approach 1: Try the beta API pattern (for backward compatibility)
-        try:
-            # Import ToolSet if available (beta versions)
-            from azure.ai.projects.models import ToolSet
-            toolset = ToolSet()
-            toolset.add(functions)
-            project_client.agents.enable_auto_function_calls(toolset=toolset)
-            function_calling_enabled = True
-            print("✓ Auto function calls enabled using ToolSet API (beta pattern)")
-        except (ImportError, AttributeError) as e1:
-            # Approach 2: Try passing FunctionTool directly
-            try:
-                project_client.agents.enable_auto_function_calls(functions)
-                function_calling_enabled = True
-                print("✓ Auto function calls enabled using FunctionTool API")
-            except (AttributeError, TypeError) as e2:
-                # Approach 3: Check if it's automatically enabled in stable version
-                print(f"Note: enable_auto_function_calls not available - may be automatic in stable version")
-                print(f"  Beta API error: {e1}")
-                print(f"  Direct API error: {e2}")
-                function_calling_enabled = True  # Assume it works through agent tools
-        
-        if not function_calling_enabled:
-            print("Warning: Could not explicitly enable auto function calls")
-            print("Agent will rely on tools passed to create_agent for function calling")
+        project_client.agents.enable_auto_function_calls(toolset=toolset)
         
         print(f"✓ Agent created successfully!")
         print(f"  Agent ID: {agent.id}")
         print(f"  Agent Name: {agent.name}")
         print(f"  Model: {agent.model}")
-        print(f"  Tools: {len(functions.definitions)} Azure Function(s) enabled")
-        print(f"  Auto Function Calls: {'✓ Enabled' if function_calling_enabled else '? Unknown (may be automatic)'}")
+        print(f"  Tools: {len(function_tools.definitions)} Azure Function(s) enabled")
+        print(f"  Auto Function Calls: ✓ Enabled")
         
         # Return agent details
         return {
@@ -427,8 +360,8 @@ CRITICAL RULES - You MUST follow these without exception:
             "description": agent.description,
             "function_app_url": function_app_url,
             "created_at": str(agent.created_at) if hasattr(agent, 'created_at') else None,
-            "tools_count": len(functions.definitions),
-            "auto_function_calls_enabled": function_calling_enabled
+            "tools_count": len(function_tools.definitions),
+            "auto_function_calls_enabled": True
         }
         
     except Exception as e:
