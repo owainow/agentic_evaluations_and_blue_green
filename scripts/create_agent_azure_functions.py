@@ -251,12 +251,52 @@ def create_agent(
         # Authenticate using DefaultAzureCredential
         credential = DefaultAzureCredential()
         
-        # Create project client
+        # Create project client - handle both old and new API patterns
         print(f"Connecting to project: {project_endpoint}")
-        project_client = AIProjectClient(
-            endpoint=project_endpoint,
-            credential=credential
-        )
+        
+        try:
+            # Try the old API pattern first (beta versions)
+            project_client = AIProjectClient(
+                endpoint=project_endpoint,
+                credential=credential
+            )
+            print("✓ Connected using endpoint-based API")
+        except TypeError as e:
+            # If that fails, try the new API pattern (stable version)
+            if "missing" in str(e) and "subscription_id" in str(e):
+                print("Note: Endpoint-based API not available, trying new API pattern...")
+                
+                # Parse the project endpoint to extract required information
+                # Expected format: https://{account}.services.ai.azure.com/api/projects/{project_name}
+                # or https://{account}.{region}.services.ai.azure.com/api/projects/{project_name}
+                
+                import urllib.parse
+                parsed_url = urllib.parse.urlparse(project_endpoint)
+                path_parts = parsed_url.path.strip('/').split('/')
+                
+                if len(path_parts) >= 3 and path_parts[-2] == 'projects':
+                    project_name = path_parts[-1]
+                    
+                    # Get subscription ID and resource group from environment or ask user to provide them
+                    subscription_id = os.getenv('AZURE_SUBSCRIPTION_ID')
+                    resource_group_name = os.getenv('AZURE_RESOURCE_GROUP_NAME')
+                    
+                    if not subscription_id:
+                        raise ValueError("AZURE_SUBSCRIPTION_ID environment variable is required for stable API")
+                    if not resource_group_name:
+                        raise ValueError("AZURE_RESOURCE_GROUP_NAME environment variable is required for stable API")
+                    
+                    project_client = AIProjectClient(
+                        credential=credential,
+                        subscription_id=subscription_id,
+                        resource_group_name=resource_group_name,
+                        project_name=project_name
+                    )
+                    print("✓ Connected using subscription-based API")
+                else:
+                    raise ValueError(f"Cannot parse project name from endpoint: {project_endpoint}")
+            else:
+                raise
         
         # Create function tool definitions for Azure Functions
         print("Setting up Azure Function tool definitions...")
