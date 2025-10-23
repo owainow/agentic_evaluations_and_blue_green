@@ -342,7 +342,7 @@ CRITICAL RULES - You MUST follow these without exception:
         
         # Enable automatic function calling - this is CRITICAL for Azure Functions integration
         print("Enabling automatic function calls for Azure Functions...")
-        project_client.agents.enable_auto_function_calls(toolset=toolset)
+        project_client.agents.enable_auto_function_calls(tools=toolset)
         
         print(f"✓ Agent created successfully!")
         print(f"  Agent ID: {agent.id}")
