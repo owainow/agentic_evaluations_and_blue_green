@@ -13,6 +13,95 @@ from azure.ai.projects import AIProjectClient
 from azure.identity import DefaultAzureCredential
 
 
+def call_azure_function(function_name: str, parameters: dict, function_app_url: str) -> str:
+    """
+    Call an Azure Function with the given parameters for agent function calling
+    
+    Args:
+        function_name: Name of the function to call
+        parameters: Dictionary of parameters to pass to the function
+        function_app_url: Base URL of the Function App
+    
+    Returns:
+        JSON string response from the function
+    """
+    try:
+        url = f"{function_app_url}/api/{function_name}"
+        
+        response = requests.post(
+            url,
+            json=parameters,
+            headers={'Content-Type': 'application/json'},
+            timeout=30
+        )
+        
+        if response.status_code == 200:
+            return response.text
+        else:
+            error_result = {
+                "error": f"Function call failed with status {response.status_code}",
+                "details": response.text,
+                "function": function_name,
+                "parameters": parameters
+            }
+            return json.dumps(error_result)
+            
+    except Exception as e:
+        error_result = {
+            "error": f"Failed to call Azure Function: {str(e)}",
+            "function": function_name,
+            "parameters": parameters
+        }
+        return json.dumps(error_result)
+
+
+def handle_function_calls(run, project_client, thread_id, function_app_url):
+    """
+    Handle function calls when the agent requires action
+    """
+    if run.status == "requires_action":
+        tool_calls = run.required_action.submit_tool_outputs.tool_calls
+        tool_outputs = []
+        
+        for tool_call in tool_calls:
+            # Parse function arguments
+            try:
+                function_args = json.loads(tool_call.function.arguments)
+            except json.JSONDecodeError:
+                function_args = {}
+            
+            # Call the appropriate Azure Function
+            if tool_call.function.name in ["get_weather", "get_news_articles"]:
+                output = call_azure_function(
+                    function_name=tool_call.function.name,
+                    parameters=function_args,
+                    function_app_url=function_app_url
+                )
+                
+                tool_outputs.append({
+                    "tool_call_id": tool_call.id,
+                    "output": output
+                })
+            else:
+                # Unknown function
+                error_output = json.dumps({
+                    "error": f"Unknown function: {tool_call.function.name}"
+                })
+                tool_outputs.append({
+                    "tool_call_id": tool_call.id,
+                    "output": error_output
+                })
+        
+        # Submit tool outputs back to the agent
+        run = project_client.agents.runs.submit_tool_outputs(
+            thread_id=thread_id,
+            run_id=run.id,
+            tool_outputs=tool_outputs
+        )
+    
+    return run
+
+
 def call_azure_function_directly(function_name: str, parameters: dict, function_app_url: str) -> dict:
     """
     Call Azure Function directly to test it works
@@ -72,22 +161,25 @@ def run_agent_test(project_client, agent_id, query: str, expected_structure: dic
         )
         
         # Run agent
-        run = project_client.agents.threads.runs.create(
+        run = project_client.agents.runs.create(
             thread_id=thread.id,
-            assistant_id=agent_id
+            agent_id=agent_id
         )
         
         # Wait for completion
         start_time = time.time()
         while run.status in ["queued", "in_progress", "requires_action"] and (time.time() - start_time) < timeout:
             time.sleep(2)
-            run = project_client.agents.threads.runs.retrieve(
+            run = project_client.agents.runs.get(
                 thread_id=thread.id,
                 run_id=run.id
             )
             
             if run.status == "requires_action":
                 print("  Agent is calling Azure Functions...")
+                function_app_url = os.getenv('FUNCTION_APP_URL')
+                if function_app_url:
+                    run = handle_function_calls(run, project_client, thread.id, function_app_url)
         
         if run.status != "completed":
             return {
