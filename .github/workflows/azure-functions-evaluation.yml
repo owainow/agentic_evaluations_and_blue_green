@@ -201,8 +201,11 @@ jobs:
   json-validation-azure-functions:
     name: JSON Response Validation with Azure Functions
     runs-on: ubuntu-latest
-    needs: [deploy-infrastructure, deploy-functions]
+    needs: [deploy-infrastructure, deploy-functions, run-ai-foundry-evaluation]  # Wait for evaluation to complete first
     steps:
+      - name: Wait for rate limit cooldown
+        run: sleep 30  # Brief pause to avoid rate limiting between evaluation jobs
+        
       - name: Checkout
         uses: actions/checkout@v4
 
