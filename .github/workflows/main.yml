@@ -132,5 +132,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: json-validation-results
-          path: json_validation_results.json
+          path: json_validation_results_azure_functions.json
           retention-days: 30
