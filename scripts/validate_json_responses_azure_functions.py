@@ -210,15 +210,47 @@ def run_agent_test(project_client, agent_id, query: str, expected_structure: dic
         
         response_content = message_list[0].content[0].text.value if message_list[0].content else ""
         
+        # Extract JSON from markdown code blocks if present
+        def extract_json_from_markdown(text):
+            """Extract JSON from markdown code blocks"""
+            import re
+            
+            # Look for ```json ... ``` blocks
+            json_pattern = r'```json\s*(.*?)\s*```'
+            match = re.search(json_pattern, text, re.DOTALL | re.IGNORECASE)
+            if match:
+                return match.group(1).strip()
+            
+            # Look for ``` ... ``` blocks that might contain JSON
+            code_pattern = r'```\s*(.*?)\s*```'
+            match = re.search(code_pattern, text, re.DOTALL)
+            if match:
+                potential_json = match.group(1).strip()
+                # Check if it looks like JSON
+                if potential_json.startswith('{') and potential_json.endswith('}'):
+                    return potential_json
+            
+            # Return original text if no code blocks found
+            return text
+        
+        # Try to extract JSON from potential markdown wrapper
+        json_content = extract_json_from_markdown(response_content)
+        
         # Validate JSON format
         try:
-            parsed_json = json.loads(response_content)
+            parsed_json = json.loads(json_content)
             is_valid_json = True
             json_error = None
         except json.JSONDecodeError as e:
-            parsed_json = None
-            is_valid_json = False
-            json_error = str(e)
+            # If extraction failed, try original content
+            try:
+                parsed_json = json.loads(response_content)
+                is_valid_json = True
+                json_error = None
+            except json.JSONDecodeError as e2:
+                parsed_json = None
+                is_valid_json = False
+                json_error = str(e2)
         
         # Validate expected structure - handle both direct and nested responses  
         structure_valid = True

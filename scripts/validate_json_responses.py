@@ -72,16 +72,50 @@ def validate_json_response(response_text: str) -> Dict[str, Any]:
         "parsed_data": None
     }
     
+    # Extract JSON from markdown code blocks if present
+    def extract_json_from_markdown(text):
+        """Extract JSON from markdown code blocks"""
+        import re
+        
+        # Look for ```json ... ``` blocks
+        json_pattern = r'```json\s*(.*?)\s*```'
+        match = re.search(json_pattern, text, re.DOTALL | re.IGNORECASE)
+        if match:
+            return match.group(1).strip()
+        
+        # Look for ``` ... ``` blocks that might contain JSON
+        code_pattern = r'```\s*(.*?)\s*```'
+        match = re.search(code_pattern, text, re.DOTALL)
+        if match:
+            potential_json = match.group(1).strip()
+            # Check if it looks like JSON
+            if potential_json.startswith('{') and potential_json.endswith('}'):
+                return potential_json
+        
+        # Return original text if no code blocks found
+        return text
+    
     # Check if response is pure JSON (no markdown or extra text)
     stripped = response_text.strip()
     result["is_pure_json"] = stripped.startswith('{') and stripped.endswith('}')
     
+    # Try to extract and parse JSON
+    json_content = extract_json_from_markdown(stripped)
+    
     # Try to parse JSON
     try:
-        parsed = json.loads(stripped)
+        parsed = json.loads(json_content)
         result["is_valid_json"] = True
         result["parsed_data"] = parsed
-        
+    except json.JSONDecodeError as e:
+        # If extraction failed, try original content  
+        try:
+            parsed = json.loads(stripped)
+            result["is_valid_json"] = True
+            result["parsed_data"] = parsed
+        except json.JSONDecodeError as e2:
+            result["error"] = str(e2)
+            return result
         # Check for weather data fields - handle both direct and nested responses
         if isinstance(parsed, dict):
             weather_fields = ["location", "temperature", "condition"]
@@ -105,9 +139,6 @@ def validate_json_response(response_text: str) -> Dict[str, Any]:
                 result["data_type"] = "news"
             else:
                 result["data_type"] = "unknown"
-                
-    except json.JSONDecodeError as e:
-        result["error"] = str(e)
     
     return result
 
