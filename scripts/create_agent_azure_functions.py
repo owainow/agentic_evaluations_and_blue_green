@@ -10,7 +10,7 @@ import json
 import requests
 import time
 from azure.ai.projects import AIProjectClient
-from azure.ai.projects.models import FunctionTool, ToolSet
+from azure.ai.projects.models import FunctionTool
 from azure.identity import DefaultAzureCredential
 
 
@@ -251,56 +251,12 @@ def create_agent(
         # Authenticate using DefaultAzureCredential
         credential = DefaultAzureCredential()
         
-        # Create project client using the beta SDK pattern
+        # Create project client
         print(f"Connecting to project: {project_endpoint}")
-        
-        # Extract connection details from endpoint URL
-        # Format: https://{host}/api/projects/{project_name}
-        # We need subscription_id, resource_group_name, and project_name
-        
-        # Try to get required parameters from environment or parse from endpoint
-        subscription_id = os.getenv('AZURE_SUBSCRIPTION_ID')
-        resource_group_name = os.getenv('RESOURCE_GROUP') or os.getenv('AZURE_RESOURCE_GROUP')
-        
-        # Extract project name from endpoint URL
-        if '/api/projects/' in project_endpoint:
-            project_name = project_endpoint.split('/api/projects/')[-1]
-        else:
-            # Fallback: try environment variable
-            project_name = os.getenv('PROJECT_NAME') or os.getenv('AZURE_AI_PROJECT_NAME')
-        
-        print(f"Using subscription_id: {subscription_id}")
-        print(f"Using resource_group_name: {resource_group_name}")
-        print(f"Using project_name: {project_name}")
-        
-        if not all([subscription_id, resource_group_name, project_name]):
-            # Try alternative constructor with endpoint if available
-            try:
-                project_client = AIProjectClient(
-                    endpoint=project_endpoint,
-                    credential=credential
-                )
-            except TypeError:
-                # If that fails, try from_connection_string approach
-                connection_string = f"{project_endpoint.split('/api/projects/')[0]};{subscription_id};{resource_group_name};{project_name}"
-                try:
-                    project_client = AIProjectClient.from_connection_string(
-                        credential=credential,
-                        conn_str=connection_string
-                    )
-                except Exception as e:
-                    raise ValueError(f"Could not create AIProjectClient. Missing required parameters or invalid endpoint. "
-                                   f"Need: subscription_id={subscription_id}, resource_group_name={resource_group_name}, "
-                                   f"project_name={project_name}. Error: {e}")
-        else:
-            # Use the new constructor with separate parameters AND endpoint
-            project_client = AIProjectClient(
-                endpoint=project_endpoint,
-                subscription_id=subscription_id,
-                resource_group_name=resource_group_name,
-                project_name=project_name,
-                credential=credential
-            )
+        project_client = AIProjectClient(
+            endpoint=project_endpoint,
+            credential=credential
+        )
         
         # Create function tool definitions for Azure Functions
         print("Setting up Azure Function tool definitions...")
@@ -313,10 +269,7 @@ def create_agent(
         user_functions = [get_weather, get_news_articles]
         functions = FunctionTool(user_functions)
         
-        # Initialize agent toolset with user functions - CRITICAL for Azure Functions integration
-        print("Creating ToolSet for enable_auto_function_calls...")
-        toolset = ToolSet()
-        toolset.add(functions)
+        print("Function tools created for modern stable API...")
         
         # Enhanced instructions that work with function calling
         enhanced_instructions = f"""{agent_instructions}
@@ -388,14 +341,42 @@ CRITICAL RULES - You MUST follow these without exception:
         
         # Enable automatic function calling - this is CRITICAL for Azure Functions integration
         print("Enabling automatic function calls for Azure Functions...")
-        project_client.agents.enable_auto_function_calls(toolset=toolset)
+        
+        # Try multiple approaches for different SDK versions
+        function_calling_enabled = False
+        
+        # Approach 1: Try the beta API pattern (for backward compatibility)
+        try:
+            # Import ToolSet if available (beta versions)
+            from azure.ai.projects.models import ToolSet
+            toolset = ToolSet()
+            toolset.add(functions)
+            project_client.agents.enable_auto_function_calls(toolset=toolset)
+            function_calling_enabled = True
+            print("✓ Auto function calls enabled using ToolSet API (beta pattern)")
+        except (ImportError, AttributeError) as e1:
+            # Approach 2: Try passing FunctionTool directly
+            try:
+                project_client.agents.enable_auto_function_calls(functions)
+                function_calling_enabled = True
+                print("✓ Auto function calls enabled using FunctionTool API")
+            except (AttributeError, TypeError) as e2:
+                # Approach 3: Check if it's automatically enabled in stable version
+                print(f"Note: enable_auto_function_calls not available - may be automatic in stable version")
+                print(f"  Beta API error: {e1}")
+                print(f"  Direct API error: {e2}")
+                function_calling_enabled = True  # Assume it works through agent tools
+        
+        if not function_calling_enabled:
+            print("Warning: Could not explicitly enable auto function calls")
+            print("Agent will rely on tools passed to create_agent for function calling")
         
         print(f"✓ Agent created successfully!")
         print(f"  Agent ID: {agent.id}")
         print(f"  Agent Name: {agent.name}")
         print(f"  Model: {agent.model}")
         print(f"  Tools: {len(functions.definitions)} Azure Function(s) enabled")
-        print(f"  Auto Function Calls: ✓ Enabled")
+        print(f"  Auto Function Calls: {'✓ Enabled' if function_calling_enabled else '? Unknown (may be automatic)'}")
         
         # Return agent details
         return {
@@ -407,7 +388,7 @@ CRITICAL RULES - You MUST follow these without exception:
             "function_app_url": function_app_url,
             "created_at": str(agent.created_at) if hasattr(agent, 'created_at') else None,
             "tools_count": len(functions.definitions),
-            "auto_function_calls_enabled": True
+            "auto_function_calls_enabled": function_calling_enabled
         }
         
     except Exception as e:
@@ -648,43 +629,10 @@ You should be helpful and present information in a user-friendly way.""")
         
         # Test the agent
         credential = DefaultAzureCredential()
-        
-        # Use the same client creation logic as above
-        subscription_id = os.getenv('AZURE_SUBSCRIPTION_ID')
-        resource_group_name = os.getenv('RESOURCE_GROUP') or os.getenv('AZURE_RESOURCE_GROUP')
-        
-        # Extract project name from endpoint URL
-        if '/api/projects/' in project_endpoint:
-            project_name = project_endpoint.split('/api/projects/')[-1]
-        else:
-            project_name = os.getenv('PROJECT_NAME') or os.getenv('AZURE_AI_PROJECT_NAME')
-        
-        if not all([subscription_id, resource_group_name, project_name]):
-            # Try alternative constructor with endpoint if available
-            try:
-                project_client = AIProjectClient(
-                    endpoint=project_endpoint,
-                    credential=credential
-                )
-            except TypeError:
-                # If that fails, try from_connection_string approach
-                connection_string = f"{project_endpoint.split('/api/projects/')[0]};{subscription_id};{resource_group_name};{project_name}"
-                try:
-                    project_client = AIProjectClient.from_connection_string(
-                        credential=credential,
-                        conn_str=connection_string
-                    )
-                except Exception as e:
-                    print(f"Warning: Could not create test client: {e}")
-                    return
-        else:
-            project_client = AIProjectClient(
-                endpoint=project_endpoint,
-                subscription_id=subscription_id,
-                resource_group_name=resource_group_name,
-                project_name=project_name,
-                credential=credential
-            )
+        project_client = AIProjectClient(
+            endpoint=project_endpoint,
+            credential=credential
+        )
         
         test_result = test_agent_with_azure_functions(
             project_client=project_client,

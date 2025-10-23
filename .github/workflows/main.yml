@@ -83,10 +83,6 @@ jobs:
         run: |
           pip install requests
 
-      - name: Install correct Azure AI SDK version
-        run: |
-          pip install --force-reinstall azure-ai-projects==1.0.0b9 azure-ai-agents==1.1.0 azure-identity
-
       - name: Run AI Agent Evaluation
         uses: microsoft/ai-agent-evals@v2-beta
         with:
@@ -124,7 +120,7 @@ jobs:
 
       - name: Install Azure AI SDK
         run: |
-          pip install azure-ai-projects==1.0.0b9 azure-ai-agents==1.1.0 azure-identity
+          pip install azure-ai-projects==1.0.0 azure-ai-agents==1.1.0 azure-identity
 
       - name: Run JSON Validation Tests
         env:
