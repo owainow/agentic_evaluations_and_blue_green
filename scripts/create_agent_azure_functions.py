@@ -251,12 +251,55 @@ def create_agent(
         # Authenticate using DefaultAzureCredential
         credential = DefaultAzureCredential()
         
-        # Create project client
+        # Create project client using the beta SDK pattern
         print(f"Connecting to project: {project_endpoint}")
-        project_client = AIProjectClient(
-            endpoint=project_endpoint,
-            credential=credential
-        )
+        
+        # Extract connection details from endpoint URL
+        # Format: https://{host}/api/projects/{project_name}
+        # We need subscription_id, resource_group_name, and project_name
+        
+        # Try to get required parameters from environment or parse from endpoint
+        subscription_id = os.getenv('AZURE_SUBSCRIPTION_ID')
+        resource_group_name = os.getenv('RESOURCE_GROUP') or os.getenv('AZURE_RESOURCE_GROUP')
+        
+        # Extract project name from endpoint URL
+        if '/api/projects/' in project_endpoint:
+            project_name = project_endpoint.split('/api/projects/')[-1]
+        else:
+            # Fallback: try environment variable
+            project_name = os.getenv('PROJECT_NAME') or os.getenv('AZURE_AI_PROJECT_NAME')
+        
+        print(f"Using subscription_id: {subscription_id}")
+        print(f"Using resource_group_name: {resource_group_name}")
+        print(f"Using project_name: {project_name}")
+        
+        if not all([subscription_id, resource_group_name, project_name]):
+            # Try alternative constructor with endpoint if available
+            try:
+                project_client = AIProjectClient(
+                    endpoint=project_endpoint,
+                    credential=credential
+                )
+            except TypeError:
+                # If that fails, try from_connection_string approach
+                connection_string = f"{project_endpoint.split('/api/projects/')[0]};{subscription_id};{resource_group_name};{project_name}"
+                try:
+                    project_client = AIProjectClient.from_connection_string(
+                        credential=credential,
+                        conn_str=connection_string
+                    )
+                except Exception as e:
+                    raise ValueError(f"Could not create AIProjectClient. Missing required parameters or invalid endpoint. "
+                                   f"Need: subscription_id={subscription_id}, resource_group_name={resource_group_name}, "
+                                   f"project_name={project_name}. Error: {e}")
+        else:
+            # Use the new constructor with separate parameters
+            project_client = AIProjectClient(
+                subscription_id=subscription_id,
+                resource_group_name=resource_group_name,
+                project_name=project_name,
+                credential=credential
+            )
         
         # Create function tool definitions for Azure Functions
         print("Setting up Azure Function tool definitions...")
@@ -604,10 +647,42 @@ You should be helpful and present information in a user-friendly way.""")
         
         # Test the agent
         credential = DefaultAzureCredential()
-        project_client = AIProjectClient(
-            endpoint=project_endpoint,
-            credential=credential
-        )
+        
+        # Use the same client creation logic as above
+        subscription_id = os.getenv('AZURE_SUBSCRIPTION_ID')
+        resource_group_name = os.getenv('RESOURCE_GROUP') or os.getenv('AZURE_RESOURCE_GROUP')
+        
+        # Extract project name from endpoint URL
+        if '/api/projects/' in project_endpoint:
+            project_name = project_endpoint.split('/api/projects/')[-1]
+        else:
+            project_name = os.getenv('PROJECT_NAME') or os.getenv('AZURE_AI_PROJECT_NAME')
+        
+        if not all([subscription_id, resource_group_name, project_name]):
+            # Try alternative constructor with endpoint if available
+            try:
+                project_client = AIProjectClient(
+                    endpoint=project_endpoint,
+                    credential=credential
+                )
+            except TypeError:
+                # If that fails, try from_connection_string approach
+                connection_string = f"{project_endpoint.split('/api/projects/')[0]};{subscription_id};{resource_group_name};{project_name}"
+                try:
+                    project_client = AIProjectClient.from_connection_string(
+                        credential=credential,
+                        conn_str=connection_string
+                    )
+                except Exception as e:
+                    print(f"Warning: Could not create test client: {e}")
+                    return
+        else:
+            project_client = AIProjectClient(
+                subscription_id=subscription_id,
+                resource_group_name=resource_group_name,
+                project_name=project_name,
+                credential=credential
+            )
         
         test_result = test_agent_with_azure_functions(
             project_client=project_client,
