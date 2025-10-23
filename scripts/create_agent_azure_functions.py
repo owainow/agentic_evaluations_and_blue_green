@@ -10,7 +10,7 @@ import json
 import requests
 import time
 from azure.ai.projects import AIProjectClient
-from azure.ai.agents.models import FunctionTool, ToolSet
+from azure.ai.agents.models import FunctionTool
 from azure.identity import DefaultAzureCredential
 
 
@@ -267,11 +267,6 @@ def create_agent(
         user_functions = [get_weather, get_news_articles]  # Use list and correct function names
         function_tools = FunctionTool(functions=user_functions)
         
-        # Initialize agent toolset with user functions - CRITICAL for Azure Functions integration
-        print("Creating ToolSet for enable_auto_function_calls...")
-        toolset = ToolSet()
-        toolset.add(function_tools)
-        
         # Enhanced instructions that work with function calling
         enhanced_instructions = f"""{agent_instructions}
 
@@ -323,7 +318,7 @@ CRITICAL RULES - You MUST follow these without exception:
                     model=model_deployment_name,
                     name=agent_name,
                     instructions=enhanced_instructions,
-                    tools=function_tools.definitions,
+                    tools=function_tools_definitions,
                     description=agent_description or f"Weather and news agent using {model_deployment_name} with Azure Functions"
                 )
                 break
@@ -342,7 +337,7 @@ CRITICAL RULES - You MUST follow these without exception:
         
         # Enable automatic function calling - this is CRITICAL for Azure Functions integration
         print("Enabling automatic function calls for Azure Functions...")
-        project_client.agents.enable_auto_function_calls(tools=toolset)
+        project_client.agents.enable_auto_function_calls(tools=function_tools)
         
         print(f"✓ Agent created successfully!")
         print(f"  Agent ID: {agent.id}")
