@@ -10,7 +10,7 @@ import json
 import requests
 import time
 from azure.ai.projects import AIProjectClient
-from azure.ai.projects.models import ToolSet
+from azure.ai.projects.models import FunctionTool, ToolSet
 from azure.identity import DefaultAzureCredential
 
 
@@ -265,10 +265,7 @@ def create_agent(
         # Create function tools with actual implementations for enable_auto_function_calls
         print("Creating function tools for Azure Functions...")
         
-        # Import the FunctionTool from the correct location
-        from azure.ai.projects.models import FunctionTool
-        
-        # Create function tools with the implementations - use the correct constructor
+        # Create function tools with the implementations
         user_functions = [get_weather, get_news_articles]
         functions = FunctionTool(user_functions)
         

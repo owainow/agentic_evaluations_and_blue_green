@@ -81,33 +81,7 @@ jobs:
 
       - name: Install dependencies for function implementations
         run: |
-          pip install requests azure-ai-agents
-          
-      - name: Setup function module
-        run: |
-          echo "Setting up function module for agent evaluation"
-          echo "PYTHONPATH: ${{ github.workspace }}/evaluations:$PYTHONPATH"
-          python -c "
-          import sys
-          sys.path.insert(0, '${{ github.workspace }}/evaluations')
-          
-          # Test agent_functions module
-          try:
-              import agent_functions
-              print('agent_functions module loaded successfully')
-              print('Available functions:', getattr(agent_functions, '__all__', 'No __all__ defined'))
-              print('user_functions set:', hasattr(agent_functions, 'user_functions'))
-          except Exception as e:
-              print('Error loading agent_functions:', e)
-              
-          # Test user_functions module
-          try:
-              import user_functions
-              print('user_functions module loaded successfully')
-              print('Available functions:', getattr(user_functions, '__all__', 'No __all__ defined'))
-          except Exception as e:
-              print('Error loading user_functions:', e)
-          "
+          pip install requests
 
       - name: Run AI Agent Evaluation
         uses: microsoft/ai-agent-evals@v2-beta
@@ -118,11 +92,8 @@ jobs:
           data-path: ${{ github.workspace }}/evaluations/${{ inputs.data_file }}
         env:
           FUNCTION_APP_URL: ${{ inputs.function_app_url }}
-          PYTHONPATH: ${{ github.workspace }}/evaluations:${{ github.workspace }}:$PYTHONPATH
+          PYTHONPATH: ${{ github.workspace }}/evaluations:$PYTHONPATH
           AGENT_FUNCTIONS_MODULE: agent_functions
-          USER_FUNCTIONS_MODULE: user_functions
-          FUNCTIONS_MODULE_PATH: ${{ github.workspace }}/evaluations
-          ENABLE_AUTO_FUNCTION_CALLS: "true"
 
   json-validation:
     name: JSON Response Validation
@@ -149,7 +120,7 @@ jobs:
 
       - name: Install Azure AI SDK
         run: |
-          pip install azure-ai-projects==1.0.0 azure-ai-agents==1.1.0 azure-identity
+          pip install azure-ai-projects==1.0.0b9 azure-ai-agents==1.1.0 azure-identity
 
       - name: Run JSON Validation Tests
         env:
