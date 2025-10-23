@@ -19,7 +19,7 @@ on:
         description: 'Evaluation data file'
         required: false
         type: string
-        default: 'basic_test.json'
+        default: 'weather_news_test.json'
       function_app_url:
         description: 'Azure Function App URL'
         required: false
@@ -42,7 +42,7 @@ on:
         description: 'Evaluation data file'
         required: false
         type: string
-        default: 'basic_test.json'
+        default: 'weather_news_test.json'
       function_app_url:
         description: 'Azure Function App URL'
         required: false
@@ -90,10 +90,6 @@ jobs:
           deployment-name: ${{ inputs.deployment_name }}
           agent-ids: ${{ inputs.agent_id }}
           data-path: ${{ github.workspace }}/evaluations/${{ inputs.data_file }}
-        env:
-          FUNCTION_APP_URL: ${{ inputs.function_app_url }}
-          PYTHONPATH: ${{ github.workspace }}/evaluations:$PYTHONPATH
-          AGENT_FUNCTIONS_MODULE: agent_functions
 
   json-validation:
     name: JSON Response Validation

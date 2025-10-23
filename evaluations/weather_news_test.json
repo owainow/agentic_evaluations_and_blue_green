@@ -1,0 +1,34 @@
+{
+  "name": "weather-news-agent-evaluation",
+  "evaluators": [
+    "RelevanceEvaluator",
+    "FluencyEvaluator",
+    "ToolCallAccuracyEvaluator"
+  ],
+  "data": [
+    {
+      "id": "weather-query-1",
+      "query": "What's the weather like in Seattle today?"
+    },
+    {
+      "id": "weather-query-2", 
+      "query": "Can you tell me the current weather in London, UK in Fahrenheit?"
+    },
+    {
+      "id": "news-query-1",
+      "query": "What are the latest news about artificial intelligence?"
+    },
+    {
+      "id": "news-query-2",
+      "query": "Show me 3 recent news articles about climate change"
+    },
+    {
+      "id": "combined-query-1",
+      "query": "What's the weather in New York and any news about weather events?"
+    },
+    {
+      "id": "out-of-scope-query",
+      "query": "What is the capital of France?"
+    }
+  ]
+}
