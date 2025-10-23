@@ -400,22 +400,6 @@ jobs:
           fi
           
           cat >> $GITHUB_STEP_SUMMARY << 'EOF'
-          
-          ## Useful Commands
-          
-          \`\`\`bash
-          # List all deployments
-          az cognitiveservices account deployment list \\
-            --resource-group ${{ env.RESOURCE_GROUP }} \\
-            --name ${{ steps.ai_services.outputs.ai_services_name }}
-          
-          # Delete this deployment
-          az cognitiveservices account deployment delete \\
-            --resource-group ${{ env.RESOURCE_GROUP }} \\
-            --name ${{ steps.ai_services.outputs.ai_services_name }} \\
-            --deployment-name ${{ steps.deployment_name.outputs.deployment_name }}
-          \`\`\`
-          EOF
     
     outputs:
       deployment_name: ${{ steps.deployment_name.outputs.deployment_name }}
