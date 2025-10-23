@@ -364,7 +364,7 @@ def test_agent_with_azure_functions(project_client, agent_id, function_app_url, 
             
             # Find the assistant's response
             response_content = None
-            message_list = messages.data if hasattr(messages, 'data') else messages
+            message_list = list(messages)  # Convert ItemPaged to list
             
             print(f"Found {len(message_list)} messages in thread")
             for i, msg in enumerate(message_list):
