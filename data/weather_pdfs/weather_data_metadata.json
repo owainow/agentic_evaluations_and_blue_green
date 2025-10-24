@@ -1,0 +1,18 @@
+{
+  "generated_at": "2025-10-24T09:18:39.018519",
+  "cities": [
+    "Seattle",
+    "Phoenix",
+    "Miami",
+    "Denver",
+    "New_York"
+  ],
+  "years": [
+    2021,
+    2022,
+    2023,
+    2024
+  ],
+  "total_files": 20,
+  "description": "Historical weather data for various US cities covering temperature, precipitation, humidity, wind, and weather conditions"
+}
