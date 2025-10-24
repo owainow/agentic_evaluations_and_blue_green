@@ -509,8 +509,6 @@ jobs:
           2. **Use the agent** via Azure AI Projects SDK (see examples in docs)
           3. **Monitor usage** in the AI Services resource
           EOF
-          
-          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
     
     outputs:
       deployment_name: ${{ steps.deployment_name.outputs.deployment_name }}
