@@ -10,13 +10,23 @@ on:
         type: string
       
       deployment_name:
-        description: 'Model deployment name'
+        description: 'Primary model deployment name'
         required: true
         type: string
       
+      deployment_name_2:
+        description: 'Second model deployment name (for comparison)'
+        required: false
+        type: string
+      
       agent_id:
-        description: 'Agent ID to evaluate'
+        description: 'Primary agent ID to evaluate'
         required: true
+        type: string
+      
+      agent_id_2:
+        description: 'Second agent ID to evaluate (for comparison)'
+        required: false
         type: string
       
       function_app_url:
@@ -178,7 +188,7 @@ jobs:
         with:
           azure-ai-project-endpoint: ${{ inputs.project_endpoint }}
           deployment-name: ${{ inputs.deployment_name }}
-          agent-ids: ${{ inputs.agent_id }}
+          agent-ids: ${{ inputs.agent_id_2 != '' && format('{0},{1}', inputs.agent_id, inputs.agent_id_2) || inputs.agent_id }}
           data-path: ${{ github.workspace }}/evaluations/${{ inputs.agent_data_file }}
 
   genai-evaluation:
@@ -197,14 +207,14 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       
-      - name: Create GenAI Evaluation Config
+      - name: Create Primary GenAI Evaluation Config
         env:
           AZURE_OPENAI_ENDPOINT: ${{ inputs.azure_endpoint }}
           AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
           AZURE_OPENAI_DEPLOYMENT: ${{ inputs.deployment_name }}
           AZURE_OPENAI_API_VERSION: ${{ inputs.api_version }}
         run: |
-          cat > genai-eval-config.json <<EOF
+          cat > genai-eval-config-primary.json <<EOF
           {
             "data": "${{ github.workspace }}/evaluations/${{ inputs.genai_data_file }}",
             "evaluators": {
@@ -223,10 +233,43 @@ jobs:
           }
           EOF
       
-      - name: Run GenAI Model Evaluation
+      - name: Run Primary GenAI Model Evaluation
         uses: microsoft/genai-evals@main
         with:
-          evaluate-configuration: ${{ github.workspace }}/genai-eval-config.json
+          evaluate-configuration: ${{ github.workspace }}/genai-eval-config-primary.json
+          
+      - name: Create Comparison GenAI Evaluation Config
+        if: ${{ inputs.deployment_name_2 != '' }}
+        env:
+          AZURE_OPENAI_ENDPOINT: ${{ inputs.azure_endpoint }}
+          AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
+          AZURE_OPENAI_DEPLOYMENT: ${{ inputs.deployment_name_2 }}
+          AZURE_OPENAI_API_VERSION: ${{ inputs.api_version }}
+        run: |
+          cat > genai-eval-config-comparison.json <<EOF
+          {
+            "data": "${{ github.workspace }}/evaluations/${{ inputs.genai_data_file }}",
+            "evaluators": {
+              "coherence": "CoherenceEvaluator",
+              "fluency": "FluencyEvaluator",
+              "groundedness": "GroundednessEvaluator",
+              "relevance": "RelevanceEvaluator"
+            },
+            "ai_model_configuration": {
+              "type": "azure_openai",
+              "azure_endpoint": "${AZURE_OPENAI_ENDPOINT}",
+              "azure_deployment": "${AZURE_OPENAI_DEPLOYMENT}",
+              "api_key": "${AZURE_OPENAI_API_KEY}",
+              "api_version": "${AZURE_OPENAI_API_VERSION}"
+            }
+          }
+          EOF
+          
+      - name: Run Comparison GenAI Model Evaluation
+        if: ${{ inputs.deployment_name_2 != '' }}
+        uses: microsoft/genai-evals@main
+        with:
+          evaluate-configuration: ${{ github.workspace }}/genai-eval-config-comparison.json
 
   combined-summary:
     name: "📊 Combined Results Summary"
@@ -237,20 +280,42 @@ jobs:
     steps:
       - name: Evaluation Summary
         run: |
-          echo "## 🎯 Combined Evaluation Results" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ inputs.agent_id_2 }}" != "" ]; then
+            echo "## 🎯 Multi-Agent Comparison Evaluation Results" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**Primary Agent:** ${{ inputs.agent_id }} (Model: ${{ inputs.deployment_name }})" >> $GITHUB_STEP_SUMMARY
+            echo "**Comparison Agent:** ${{ inputs.agent_id_2 }} (Model: ${{ inputs.deployment_name_2 }})" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## 🎯 Combined Evaluation Results" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+          
           echo "| Component | Status | Result |" >> $GITHUB_STEP_SUMMARY
           echo "|-----------|--------|--------|" >> $GITHUB_STEP_SUMMARY
           echo "| 🧪 JSON Validation | ${{ needs.functional-json-testing.result == 'success' && '✅ Passed' || '❌ Failed' }} | Functional testing of agent JSON responses |" >> $GITHUB_STEP_SUMMARY
-          echo "| 🤖 AI Agent | ${{ needs.agent-evaluation.result == 'success' && '✅ Passed' || '❌ Failed' }} | Agent evaluation with tool calling tests |" >> $GITHUB_STEP_SUMMARY
-          echo "| 🧠 GenAI Model | ${{ needs.genai-evaluation.result == 'success' && '✅ Passed' || '❌ Failed' }} | Model quality evaluation with ground truth |" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ inputs.agent_id_2 }}" != "" ]; then
+            echo "| 🤖 Agent Comparison | ${{ needs.agent-evaluation.result == 'success' && '✅ Passed' || '❌ Failed' }} | Comparative evaluation between agents |" >> $GITHUB_STEP_SUMMARY
+            echo "| 🧠 Model Comparison | ${{ needs.genai-evaluation.result == 'success' && '✅ Passed' || '❌ Failed' }} | Comparative model quality evaluation |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| 🤖 AI Agent | ${{ needs.agent-evaluation.result == 'success' && '✅ Passed' || '❌ Failed' }} | Agent evaluation with tool calling tests |" >> $GITHUB_STEP_SUMMARY
+            echo "| 🧠 GenAI Model | ${{ needs.genai-evaluation.result == 'success' && '✅ Passed' || '❌ Failed' }} | Model quality evaluation with ground truth |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
           echo "" >> $GITHUB_STEP_SUMMARY
           
           # Overall status
           if [ "${{ needs.functional-json-testing.result }}" == "success" ] && [ "${{ needs.agent-evaluation.result }}" == "success" ] && [ "${{ needs.genai-evaluation.result }}" == "success" ]; then
-            echo "### 🎉 Overall Result: ✅ **ALL EVALUATIONS PASSED**" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "All functional, agent, and model evaluations completed successfully. Ready for deployment!" >> $GITHUB_STEP_SUMMARY
+            if [ "${{ inputs.agent_id_2 }}" != "" ]; then
+              echo "### 🎉 Overall Result: ✅ **ALL COMPARISON EVALUATIONS PASSED**" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "All functional, agent comparison, and model comparison evaluations completed successfully. Review detailed results to compare model performance!" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "### 🎉 Overall Result: ✅ **ALL EVALUATIONS PASSED**" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "All functional, agent, and model evaluations completed successfully. Ready for deployment!" >> $GITHUB_STEP_SUMMARY
+            fi
           else
             echo "### ⚠️ Overall Result: ❌ **SOME EVALUATIONS FAILED**" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY

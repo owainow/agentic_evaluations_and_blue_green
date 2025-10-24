@@ -230,6 +230,53 @@ jobs:
           
           echo "$DEPLOYMENT_STATUS"
 
+      - name: Deploy Second Model
+        id: deploy_model_2
+        if: ${{ inputs.create_comparison_agent == true }}
+        shell: bash
+        run: |
+          echo "Deploying second model ${{ inputs.model_name_2 }} (version ${{ inputs.model_version_2 }}) for comparison..."
+          
+          # Deploy using BICEP template
+          DEPLOYMENT_OUTPUT=$(az deployment group create \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --template-file infrastructure/model-deployment.bicep \
+            --parameters \
+              aiServicesName="${{ steps.ai_services.outputs.ai_services_name }}" \
+              deploymentName="${{ steps.deployment_name_2.outputs.deployment_name_2 }}" \
+              modelName="${{ inputs.model_name_2 }}" \
+              modelVersion="${{ inputs.model_version_2 }}" \
+              skuName="${{ inputs.sku_name }}" \
+              capacity=${{ inputs.capacity }} \
+            --query 'properties.outputs' \
+            -o json)
+          
+          echo "Second deployment completed!"
+          echo "$DEPLOYMENT_OUTPUT" | jq '.'
+          
+          # Extract outputs
+          ENDPOINT_2=$(echo "$DEPLOYMENT_OUTPUT" | jq -r '.endpoint.value')
+          DEPLOYMENT_ID_2=$(echo "$DEPLOYMENT_OUTPUT" | jq -r '.deploymentId.value')
+          
+          echo "endpoint_2=${ENDPOINT_2}" >> $GITHUB_OUTPUT
+          echo "deployment_id_2=${DEPLOYMENT_ID_2}" >> $GITHUB_OUTPUT
+      
+      - name: Verify Second Model Deployment
+        id: verify_deployment_2
+        if: ${{ inputs.create_comparison_agent == true }}
+        shell: bash
+        run: |
+          echo "Verifying second model deployment..."
+          
+          DEPLOYMENT_STATUS_2=$(az cognitiveservices account deployment show \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --name ${{ steps.ai_services.outputs.ai_services_name }} \
+            --deployment-name ${{ steps.deployment_name_2.outputs.deployment_name_2 }} \
+            --query '{Name:name, Model:properties.model.name, Version:properties.model.version, State:properties.provisioningState, Capacity:sku.capacity}' \
+            -o table)
+          
+          echo "$DEPLOYMENT_STATUS_2"
+
       - name: Get Azure OpenAI API Key
         id: openai_credentials
         shell: bash
@@ -403,6 +450,52 @@ jobs:
             echo "Agent ID: ${{ steps.create_agent.outputs.agentId }}"
             echo "Agent will be visible in Azure AI Foundry Studio: https://ai.azure.com"
           fi
+
+      - name: Create Second AI Agent (Comparison)
+        id: create_agent_2
+        if: ${{ inputs.create_comparison_agent == true && steps.verify_deployment_2.outcome == 'success' }}
+        continue-on-error: true
+        shell: bash
+        env:
+          PROJECT_ENDPOINT: ${{ steps.project_details.outputs.project_endpoint }}
+          MODEL_DEPLOYMENT_NAME: ${{ steps.deployment_name_2.outputs.deployment_name_2 }}
+          AGENT_NAME: ${{ inputs.agent_name_2 }}
+          AGENT_INSTRUCTIONS: ${{ inputs.agent_instructions }}
+          FUNCTION_APP_URL: ${{ steps.function_app.outputs.function_app_url }}
+          AZURE_AI_SEARCH_INDEX_NAME: 'knowledge-simple-index'
+        run: |
+          echo "Creating second agent with Azure Functions tools and knowledge base..."
+          echo "Model deployment: ${MODEL_DEPLOYMENT_NAME}"
+          echo "Function App URL: ${FUNCTION_APP_URL}"
+          echo "Knowledge Base Index: ${AZURE_AI_SEARCH_INDEX_NAME}"
+          python scripts/create_agent_azure_functions.py
+
+      - name: Second Agent Creation Status
+        if: ${{ inputs.create_comparison_agent == true }}
+        shell: bash
+        run: |
+          if [ "${{ steps.create_agent_2.outcome }}" == "failure" ]; then
+            echo "⚠️ Second agent creation failed."
+            echo ""
+            echo "Common causes:"
+            echo "1. Missing 'Azure AI Developer' role on the service principal"
+            echo "2. Role assignment not yet propagated (can take 5-10 minutes)"
+            echo "3. Invalid PROJECT_ENDPOINT format"
+            echo ""
+            echo "To fix:"
+            echo "1. Go to Azure Portal → AI Services resource → Access control (IAM)"
+            echo "2. Add role assignment: 'Azure AI Developer'"
+            echo "3. Assign to: github-actions-aifoundry (service principal)"
+            echo ""
+            echo "For detailed instructions, see: docs/GITHUB_ACTIONS_SETUP.md"
+            echo ""
+            echo "✅ The second model deployment was successful and can be used directly."
+          else
+            echo "agent_2_created=true" >> $GITHUB_OUTPUT
+            echo "✅ Second agent created successfully!"
+            echo "Agent ID: ${{ steps.create_agent_2.outputs.agentId }}"
+            echo "Agent will be visible in Azure AI Foundry Studio: https://ai.azure.com"
+          fi
       
       - name: Create Deployment Summary
         shell: bash
@@ -410,7 +503,7 @@ jobs:
           cat >> $GITHUB_STEP_SUMMARY << EOF
           # 🤖 Model Deployment & Agent Creation Summary
           
-          ## Deployment Details
+          ## Primary Model Deployment
           
           | Property | Value |
           |----------|-------|
@@ -421,8 +514,26 @@ jobs:
           | **SKU** | ${{ inputs.sku_name }} |
           | **Capacity** | ${{ inputs.capacity }} TPM (thousands) |
           | **AI Services** | ${{ steps.ai_services.outputs.ai_services_name }} |
+          EOF
           
-          ## Agent Details
+          if [ "${{ inputs.create_comparison_agent }}" == "true" ]; then
+            cat >> $GITHUB_STEP_SUMMARY << EOF
+          
+          ## Comparison Model Deployment
+          
+          | Property | Value |
+          |----------|-------|
+          | **Model** | ${{ inputs.model_name_2 }} |
+          | **Version** | ${{ inputs.model_version_2 }} |
+          | **Deployment Name** | ${{ steps.deployment_name_2.outputs.deployment_name_2 }} |
+          | **SKU** | ${{ inputs.sku_name }} |
+          | **Capacity** | ${{ inputs.capacity }} TPM (thousands) |
+          EOF
+          fi
+          
+          cat >> $GITHUB_STEP_SUMMARY << EOF
+          
+          ## Primary Agent Details
           
           EOF
           
@@ -435,6 +546,48 @@ jobs:
           | **Agent ID** | ${{ steps.create_agent.outputs.agentId }} |
           | **Model Deployment** | ${{ steps.deployment_name.outputs.deployment_name }} |
           | **Project Endpoint** | ${{ steps.project_details.outputs.project_endpoint }} |
+          EOF
+          else
+            cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+          | Property | Value |
+          |----------|-------|
+          | **Status** | ⚠️ Creation Failed |
+          | **Agent Name** | ${{ inputs.agent_name }} (not created) |
+          
+          > **Note**: Check the logs above for error details.
+          > The model deployment is complete and can be used directly.
+          EOF
+          fi
+          
+          if [ "${{ inputs.create_comparison_agent }}" == "true" ]; then
+            cat >> $GITHUB_STEP_SUMMARY << EOF
+          
+          ## Comparison Agent Details
+          
+          EOF
+            if [ "${{ steps.create_agent_2.outcome }}" == "success" ]; then
+              cat >> $GITHUB_STEP_SUMMARY << EOF
+          | Property | Value |
+          |----------|-------|
+          | **Status** | ✅ Created Successfully |
+          | **Agent Name** | ${{ inputs.agent_name_2 }} |
+          | **Agent ID** | ${{ steps.create_agent_2.outputs.agentId }} |
+          | **Model Deployment** | ${{ steps.deployment_name_2.outputs.deployment_name_2 }} |
+          EOF
+            else
+              cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+          | Property | Value |
+          |----------|-------|
+          | **Status** | ⚠️ Creation Failed |
+          | **Agent Name** | ${{ inputs.agent_name_2 }} (not created) |
+          
+          > **Note**: Check the logs above for error details.
+          > The second model deployment is complete and can be used directly.
+          EOF
+            fi
+          fi
+          
+          cat >> $GITHUB_STEP_SUMMARY << EOF
           
           ## Azure Functions Tools
           
@@ -453,27 +606,24 @@ jobs:
           | **Search Service** | Connected via Azure AI Search |
           | **Knowledge Documents** | 28 indexed documents |
           | **Portal** | [View in Azure AI Foundry Studio](https://ai.azure.com) |
-          EOF
-          else
-            cat >> $GITHUB_STEP_SUMMARY << 'EOF'
-          | Property | Value |
-          |----------|-------|
-          | **Status** | ⚠️ Creation Failed |
-          | **Agent Name** | ${{ inputs.agent_name }} (not created) |
-          
-          > **Note**: Check the logs above for error details.
-          > The model deployment is complete and can be used directly.
-          EOF
-          fi
-          
-          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
           
           ## Next Steps
           
           EOF
           
           if [ "${{ steps.create_agent.outcome }}" == "success" ]; then
-            cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+            if [ "${{ inputs.create_comparison_agent }}" == "true" ] && [ "${{ steps.create_agent_2.outcome }}" == "success" ]; then
+              cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+          1. **Multi-agent comparison evaluation will run automatically** in the next job
+          2. **Compare agents** in Azure AI Foundry Studio: [https://ai.azure.com](https://ai.azure.com)
+             - Navigate to your project
+             - Click "My agents" in the left menu
+             - Find your agents: ${{ inputs.agent_name }} and ${{ inputs.agent_name_2 }}
+          3. **Review evaluation results** comparing model performance
+          4. **Monitor usage** in the AI Services resource
+          EOF
+            else
+              cat >> $GITHUB_STEP_SUMMARY << 'EOF'
           1. **Combined evaluation will run automatically** in the next job
           2. **Test the agent** in Azure AI Foundry Studio: [https://ai.azure.com](https://ai.azure.com)
              - Navigate to your project
@@ -482,13 +632,11 @@ jobs:
           3. **Use the agent** via Azure AI Projects SDK (see examples in docs)
           4. **Monitor usage** in the AI Services resource
           EOF
+            fi
           else
             cat >> $GITHUB_STEP_SUMMARY << 'EOF'
-          1. **Test the agent** in Azure AI Foundry Studio: [https://ai.azure.com](https://ai.azure.com)
-             - Navigate to your project
-             - Click "My agents" in the left menu
-             - Find your agent: ${{ inputs.agent_name }}
-          2. **Use the agent** via Azure AI Projects SDK (see examples in docs)
+          1. **Use the deployed model** directly via Azure AI Projects SDK
+          2. **Check agent creation logs** for troubleshooting
           3. **Monitor usage** in the AI Services resource
           EOF
           fi
@@ -497,8 +645,11 @@ jobs:
     
     outputs:
       deployment_name: ${{ steps.deployment_name.outputs.deployment_name }}
+      deployment_name_2: ${{ steps.deployment_name_2.outputs.deployment_name_2 }}
       agent_id: ${{ steps.create_agent.outputs.agentId }}
+      agent_id_2: ${{ steps.create_agent_2.outputs.agentId }}
       agent_name: ${{ steps.create_agent.outputs.agentName }}
+      agent_name_2: ${{ steps.create_agent_2.outputs.agentName }}
       project_endpoint: ${{ steps.project_details.outputs.project_endpoint }}
       project_name: ${{ steps.project_details.outputs.project_name }}
       function_app_name: ${{ steps.function_app.outputs.function_app_name }}
@@ -514,7 +665,9 @@ jobs:
     with:
       project_endpoint: ${{ needs.deploy-model-and-agent.outputs.project_endpoint }}
       deployment_name: ${{ needs.deploy-model-and-agent.outputs.deployment_name }}
+      deployment_name_2: ${{ needs.deploy-model-and-agent.outputs.deployment_name_2 }}
       agent_id: ${{ needs.deploy-model-and-agent.outputs.agent_id }}
+      agent_id_2: ${{ needs.deploy-model-and-agent.outputs.agent_id_2 }}
       function_app_url: ${{ needs.deploy-model-and-agent.outputs.function_app_url }}
       azure_endpoint: ${{ needs.deploy-model-and-agent.outputs.azure_openai_endpoint }}
       api_version: '2024-10-21'
