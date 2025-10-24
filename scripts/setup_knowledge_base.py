@@ -116,29 +116,31 @@ def generate_knowledge_data() -> bool:
         print(f"❌ Error generating data: {e}")
         return False
 
-async def setup_integrated_vectorization() -> bool:
-    """Set up the Azure AI Search integrated vectorization pipeline."""
-    print("🔍 Setting up Azure AI Search integrated vectorization...")
+def setup_simple_indexing() -> bool:
+    """Set up the Azure AI Search simple indexing pipeline."""
+    print("🔍 Setting up Azure AI Search simple indexing...")
     
     try:
-        # Import the indexer class
-        from scripts.index_documents_integrated import IntegratedVectorizationIndexer
+        # Import the simple indexer class
+        from scripts.index_documents_simple import SimpleDocumentIndexer
         
         # Initialize the indexer
-        indexer = IntegratedVectorizationIndexer()
+        indexer = SimpleDocumentIndexer()
         
         # Set up the complete pipeline
         data_dir = Path("data")
-        result = await indexer.setup_complete_pipeline(data_dir)
+        result = indexer.setup_simple_pipeline(data_dir)
         
         if result["success"]:
-            print(f"✅ Successfully set up integrated vectorization!")
+            print(f"✅ Successfully set up simple indexing!")
             print(f"   Index: {result['index_name']}")
             print(f"   Documents: {result['uploaded_files']}")
+            print(f"   Search Type: {result['search_type']}")
             
             # Wait a bit for indexing to start
             print("⏳ Waiting for initial indexing to begin...")
-            await asyncio.sleep(30)
+            import time
+            time.sleep(30)
             
             # Check indexer status
             status = indexer.get_indexer_status()
@@ -147,11 +149,11 @@ async def setup_integrated_vectorization() -> bool:
             
             return True
         else:
-            print(f"❌ Failed to set up vectorization: {result.get('error')}")
+            print(f"❌ Failed to set up simple indexing: {result.get('error')}")
             return False
             
     except Exception as e:
-        print(f"❌ Error setting up vectorization: {e}")
+        print(f"❌ Error setting up simple indexing: {e}")
         return False
 
 def create_summary_report(success: bool) -> None:
@@ -169,18 +171,18 @@ def create_summary_report(success: bool) -> None:
             f.write("- **Weather Data**: Historical weather information for multiple cities\n")
             f.write("- **News Articles**: Climate and weather-related news content\n\n")
             f.write("### Azure AI Search Configuration\n")
-            f.write("- **Index Name**: `knowledge-vector-index`\n")
-            f.write("- **Vector Dimensions**: 1536 (text-embedding-3-small)\n")
+            f.write("- **Index Name**: `knowledge-simple-index`\n")
             f.write("- **Search Capabilities**:\n")
-            f.write("  - Vector search (semantic similarity)\n")
             f.write("  - Keyword search (traditional text matching)\n")
-            f.write("  - Hybrid search (combines both approaches)\n")
-            f.write("  - Filtered search (by category, source type, etc.)\n\n")
-            f.write("### Integrated Vectorization Pipeline\n")
+            f.write("  - Full-text search across document content\n")
+            f.write("  - Filtered search (by category, source type, etc.)\n")
+            f.write("  - Faceted search and sorting\n\n")
+            f.write("### Simple Indexing Pipeline\n")
             f.write("- **Data Source**: Blob storage container (`knowledge-documents`)\n")
-            f.write("- **Skillset**: Text splitting + Azure OpenAI embedding\n")
+            f.write("- **Skillset**: None (basic text extraction only)\n")
             f.write("- **Indexer**: Automated processing every 2 hours\n")
-            f.write("- **Document Processing**: Native PDF parsing and chunking\n\n")
+            f.write("- **Document Processing**: Native PDF parsing without embeddings\n")
+            f.write("- **Benefits**: Fast setup, no external model dependencies\n\n")
             f.write("## Next Steps\n\n")
             f.write("1. **Deploy your language model** using the model deployment workflow\n")
             f.write("2. **Update your agent** to use the knowledge base for RAG\n")
@@ -240,12 +242,66 @@ async def main():
             print("❌ Failed to generate knowledge data")
             return
         
-        # Set up integrated vectorization
-        if await setup_integrated_vectorization():
+        # Set up simple indexing
+        if setup_simple_indexing():
             print("✅ Knowledge base setup completed successfully!")
             success = True
         else:
-            print("❌ Failed to set up integrated vectorization")
+            print("❌ Failed to set up simple indexing")
+    
+    except Exception as e:
+        print(f"❌ Unexpected error: {e}")
+        import traceback
+        traceback.print_exc()
+    
+    finally:
+        # Create summary report
+        create_summary_report(success)
+        
+        if success:
+            print("\n🎉 Knowledge Base is Ready!")
+            print("Your Azure AI Search service is now populated with weather and news data.")
+            print("The agent can now use this knowledge base for RAG operations.")
+        else:
+            print("\n💥 Setup Failed")
+            print("Check the logs above and the summary report for troubleshooting steps.")
+
+def main():
+    """Main function to set up the complete knowledge base."""
+    print("🚀 Setting up Azure AI Search Knowledge Base")
+    print("=" * 50)
+    
+    success = False
+    
+    try:
+        # Check if we have deployment outputs
+        deployment_outputs_file = os.getenv('DEPLOYMENT_OUTPUTS_FILE', 'deployment-outputs.json')
+        
+        if os.path.exists(deployment_outputs_file):
+            print(f"📋 Loading deployment outputs from {deployment_outputs_file}")
+            with open(deployment_outputs_file, 'r') as f:
+                deployment_outputs = json.load(f)
+            
+            # Set up environment
+            setup_environment_from_deployment(deployment_outputs)
+        else:
+            print(f"⚠️ Deployment outputs file not found: {deployment_outputs_file}")
+            print("Using environment variables directly...")
+        
+        # Install required packages
+        install_required_packages()
+        
+        # Generate knowledge data
+        if not generate_knowledge_data():
+            print("❌ Failed to generate knowledge data")
+            return
+        
+        # Set up simple indexing
+        if setup_simple_indexing():
+            print("✅ Knowledge base setup completed successfully!")
+            success = True
+        else:
+            print("❌ Failed to set up simple indexing")
     
     except Exception as e:
         print(f"❌ Unexpected error: {e}")
@@ -265,4 +321,4 @@ async def main():
             print("Check the logs above and the summary report for troubleshooting steps.")
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

@@ -592,7 +592,7 @@ jobs:
           echo "This will:"
           echo "  1. Generate weather and news PDF data"
           echo "  2. Upload PDFs to blob storage"
-          echo "  3. Create Azure AI Search index with integrated vectorization"
+          echo "  3. Create Azure AI Search index with simple keyword search"
           echo "  4. Set up automated indexing pipeline"
           echo ""
           
@@ -624,7 +624,7 @@ jobs:
               echo "" >> $GITHUB_STEP_SUMMARY
               echo "### 🔍 Search Service Details" >> $GITHUB_STEP_SUMMARY
               echo "- **Service Name**: \`${{ steps.get-outputs.outputs.search_service_name }}\`" >> $GITHUB_STEP_SUMMARY
-              echo "- **Index Name**: \`knowledge-vector-index\`" >> $GITHUB_STEP_SUMMARY
+              echo "- **Index Name**: \`knowledge-simple-index\`" >> $GITHUB_STEP_SUMMARY
               echo "- **Endpoint**: \`https://${{ steps.get-outputs.outputs.search_service_name }}.search.windows.net\`" >> $GITHUB_STEP_SUMMARY
               echo "" >> $GITHUB_STEP_SUMMARY
               echo "### 🎯 Ready for Agent Integration" >> $GITHUB_STEP_SUMMARY
@@ -636,7 +636,7 @@ jobs:
               echo '' >> $GITHUB_STEP_SUMMARY
               echo 'search_client = SearchClient(' >> $GITHUB_STEP_SUMMARY
               echo "    endpoint=\"https://${{ steps.get-outputs.outputs.search_service_name }}.search.windows.net\"," >> $GITHUB_STEP_SUMMARY
-              echo '    index_name="knowledge-vector-index",' >> $GITHUB_STEP_SUMMARY
+              echo '    index_name="knowledge-simple-index",' >> $GITHUB_STEP_SUMMARY
               echo '    credential=DefaultAzureCredential()' >> $GITHUB_STEP_SUMMARY
               echo ')' >> $GITHUB_STEP_SUMMARY
               echo '```' >> $GITHUB_STEP_SUMMARY
