@@ -509,7 +509,6 @@ jobs:
           2. **Use the agent** via Azure AI Projects SDK (see examples in docs)
           3. **Monitor usage** in the AI Services resource
           EOF
-          fi
           
           cat >> $GITHUB_STEP_SUMMARY << 'EOF'
     
