@@ -1,4 +1,4 @@
-name: "Combined AI Evaluation (Agent + GenAI)"
+name: "Combined AI Evaluation (Agent + GenAI + Functional)"
 
 on:
   workflow_call:
@@ -47,7 +47,7 @@ on:
         description: 'GenAI evaluation test data file'
         required: true
         type: string
-        default: 'genai_evaluation_test.json'
+        default: 'genai_evaluation_test.jsonl'
 
     secrets:
       AZURE_CLIENT_ID:
@@ -112,9 +112,55 @@ permissions:
   contents: read
 
 jobs:
+  functional-json-testing:
+    name: "🧪 Functional JSON Validation Testing"
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install azure-ai-projects azure-identity azure-ai-agents requests
+      
+      - name: Run JSON Validation Tests
+        env:
+          PROJECT_ENDPOINT: ${{ inputs.project_endpoint }}
+          AGENT_ID: ${{ inputs.agent_id }}
+          FUNCTION_APP_URL: ${{ inputs.function_app_url }}
+        run: |
+          echo "🧪 Running JSON validation tests..."
+          echo "Testing agent JSON responses and Azure Functions integration..."
+          python scripts/validate_json_responses_azure_functions.py
+      
+      - name: Upload JSON Test Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: json-validation-results
+          path: |
+            json_validation_results_*.json
+            **/*validation*.json
+          retention-days: 30
+        if: always()
+
   agent-evaluation:
     name: "🤖 AI Agent Evaluation"
     runs-on: ubuntu-latest
+    needs: functional-json-testing
     
     steps:
       - name: Checkout code
@@ -138,6 +184,7 @@ jobs:
   genai-evaluation:
     name: "🧠 GenAI Model Evaluation"
     runs-on: ubuntu-latest
+    needs: functional-json-testing
     
     steps:
       - name: Checkout code
@@ -184,7 +231,7 @@ jobs:
   combined-summary:
     name: "📊 Combined Results Summary"
     runs-on: ubuntu-latest
-    needs: [agent-evaluation, genai-evaluation]
+    needs: [functional-json-testing, agent-evaluation, genai-evaluation]
     if: always()
     
     steps:
@@ -194,15 +241,16 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Component | Status | Result |" >> $GITHUB_STEP_SUMMARY
           echo "|-----------|--------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| 🧪 JSON Validation | ${{ needs.functional-json-testing.result == 'success' && '✅ Passed' || '❌ Failed' }} | Functional testing of agent JSON responses |" >> $GITHUB_STEP_SUMMARY
           echo "| 🤖 AI Agent | ${{ needs.agent-evaluation.result == 'success' && '✅ Passed' || '❌ Failed' }} | Agent evaluation with tool calling tests |" >> $GITHUB_STEP_SUMMARY
           echo "| 🧠 GenAI Model | ${{ needs.genai-evaluation.result == 'success' && '✅ Passed' || '❌ Failed' }} | Model quality evaluation with ground truth |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           
           # Overall status
-          if [ "${{ needs.agent-evaluation.result }}" == "success" ] && [ "${{ needs.genai-evaluation.result }}" == "success" ]; then
+          if [ "${{ needs.functional-json-testing.result }}" == "success" ] && [ "${{ needs.agent-evaluation.result }}" == "success" ] && [ "${{ needs.genai-evaluation.result }}" == "success" ]; then
             echo "### 🎉 Overall Result: ✅ **ALL EVALUATIONS PASSED**" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "Both agent and model evaluations completed successfully. Ready for deployment!" >> $GITHUB_STEP_SUMMARY
+            echo "All functional, agent, and model evaluations completed successfully. Ready for deployment!" >> $GITHUB_STEP_SUMMARY
           else
             echo "### ⚠️ Overall Result: ❌ **SOME EVALUATIONS FAILED**" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
@@ -211,15 +259,18 @@ jobs:
           
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 📁 Detailed Results" >> $GITHUB_STEP_SUMMARY
-          echo "Check the individual evaluation summaries above for detailed results and metrics." >> $GITHUB_STEP_SUMMARY
+          echo "- **JSON Validation**: Check 'json-validation-results' artifact for functional test results" >> $GITHUB_STEP_SUMMARY
+          echo "- **Agent Evaluation**: Check the individual evaluation summaries for tool calling metrics" >> $GITHUB_STEP_SUMMARY
+          echo "- **GenAI Evaluation**: Check the individual evaluation summaries for model quality metrics" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 🚀 Next Steps" >> $GITHUB_STEP_SUMMARY
-          if [ "${{ needs.agent-evaluation.result }}" == "success" ] && [ "${{ needs.genai-evaluation.result }}" == "success" ]; then
+          if [ "${{ needs.functional-json-testing.result }}" == "success" ] && [ "${{ needs.agent-evaluation.result }}" == "success" ] && [ "${{ needs.genai-evaluation.result }}" == "success" ]; then
             echo "- ✅ Ready for production deployment" >> $GITHUB_STEP_SUMMARY
-            echo "- ✅ Agent functionality validated" >> $GITHUB_STEP_SUMMARY
-            echo "- ✅ Model quality confirmed" >> $GITHUB_STEP_SUMMARY
+            echo "- ✅ JSON responses validated" >> $GITHUB_STEP_SUMMARY
+            echo "- ✅ Agent functionality confirmed" >> $GITHUB_STEP_SUMMARY
+            echo "- ✅ Model quality verified" >> $GITHUB_STEP_SUMMARY
           else
             echo "- ⚠️ Review failed evaluations before deployment" >> $GITHUB_STEP_SUMMARY
-            echo "- 📋 Check individual evaluation logs" >> $GITHUB_STEP_SUMMARY
-            echo "- 🔧 Consider model or agent adjustments" >> $GITHUB_STEP_SUMMARY
+            echo "- 📋 Check individual evaluation logs and artifacts" >> $GITHUB_STEP_SUMMARY
+            echo "- 🔧 Consider agent, function, or model adjustments" >> $GITHUB_STEP_SUMMARY
           fi
