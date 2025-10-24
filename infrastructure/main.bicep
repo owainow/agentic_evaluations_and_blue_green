@@ -89,6 +89,21 @@ resource aiProject 'Microsoft.CognitiveServices/accounts/projects@2025-04-01-pre
     description: 'Azure AI Foundry Project for Agent deployment'
     displayName: projectName
   }
+
+  // Azure AI Search connection for knowledge grounding
+  resource searchConnection 'connections@2025-04-01-preview' = {
+    name: searchService.name
+    properties: {
+      category: 'CognitiveSearch'
+      target: 'https://${searchService.name}.search.windows.net'
+      authType: 'AAD'
+      metadata: {
+        ApiType: 'Azure'
+        ResourceId: searchService.id
+        location: searchService.location
+      }
+    }
+  }
 }
 
 // ============================================================================
