@@ -1,123 +1,179 @@
-name: "Deploy Model, Agent & Run Combined Evaluation"
+name: "AI Agent Evaluation"
 
 on:
   workflow_dispatch:
     inputs:
-      environment:
-        description: 'Environment to deploy to'
-        required: true
-        type: choice
-        options:
-          - dev
-          - test
-          - prod
-        default: 'dev'
-      
-      model_name:
-        description: 'Model to deploy'
-        required: true
-        type: choice
-        options:
-          - gpt-4o
-          - gpt-4o-mini
-          - gpt-4
-          - gpt-4-turbo
-          - gpt-35-turbo
-          - gpt-35-turbo-16k
-        default: 'gpt-4o'
-      
-      model_version:
-        description: 'Model version'
+      project_endpoint:
+        description: 'Azure AI Foundry project endpoint'
         required: true
         type: string
-        default: '2024-11-20'
-      
       deployment_name:
-        description: 'Name for the model deployment (leave empty to auto-generate)'
-        required: false
-        type: string
-      
-      sku_name:
-        description: 'Deployment SKU type'
-        required: true
-        type: choice
-        options:
-          - Standard
-          - GlobalStandard
-        default: 'Standard'
-      
-      capacity:
-        description: 'Deployment capacity (tokens per minute in thousands)'
-        required: true
-        type: number
-        default: 10
-      
-      agent_name:
-        description: 'Name for the AI agent'
+        description: 'Model deployment name'
         required: true
         type: string
-        default: 'Weather News Agent with Azure Functions & Search'
-      
-      run_blue_green:
-        description: 'Run blue/green deployment with human approval after evaluation'
+      agent_id:
+        description: 'Agent ID to evaluate'
+        required: true
+        type: string
+      data_file:
+        description: 'Evaluation data file'
         required: false
-        type: boolean
-        default: false
+        type: string
+        default: 'weather_news_test.json'
+      function_app_url:
+        description: 'Azure Function App URL'
+        required: false
+        type: string
+  workflow_call:
+    inputs:
+      project_endpoint:
+        description: 'Azure AI Foundry project endpoint'
+        required: true
+        type: string
+      deployment_name:
+        description: 'Model deployment name'
+        required: true
+        type: string
+      agent_id:
+        description: 'Agent ID to evaluate'
+        required: true
+        type: string
+      data_file:
+        description: 'Evaluation data file'
+        required: false
+        type: string
+        default: 'weather_news_test.json'
+      function_app_url:
+        description: 'Azure Function App URL'
+        required: false
+        type: string
+    secrets:
+      AZURE_CLIENT_ID:
+        required: true
+      AZURE_TENANT_ID:
+        required: true
+      AZURE_SUBSCRIPTION_ID:
+        required: true
+
 permissions:
   id-token: write
   contents: read
 
 jobs:
-  deploy-model-and-agent:
-    name: Deploy Model and Create Agent
-    uses: ./.github/workflows/deploy-model-and-agent.yml
-    with:
-      environment: ${{ inputs.environment }}
-      model_name: ${{ inputs.model_name }}
-      model_version: ${{ inputs.model_version }}
-      deployment_name: ${{ inputs.deployment_name }}
-      sku_name: ${{ inputs.sku_name }}
-      capacity: ${{ inputs.capacity }}
-      agent_name: ${{ inputs.agent_name }}
-      run_blue_green: ${{ inputs.run_blue_green }}
-    secrets:
-      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+  run-action:
+    name: AI Foundry Agent Evaluation
+    runs-on: ubuntu-latest
+    outputs:
+      evaluation-passed: ${{ steps.check-results.outputs.passed }}
+      evaluation-summary: ${{ steps.create-summary.outputs.summary }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-  run-combined-evaluation:
-    name: Run Combined Evaluation (Agent + GenAI)
-    needs: deploy-model-and-agent
-    if: ${{ needs.deploy-model-and-agent.outputs.agent_id != '' }}
-    uses: ./.github/workflows/combined-evaluation.yml
-    with:
-      project_endpoint: ${{ needs.deploy-model-and-agent.outputs.project_endpoint }}
-      deployment_name: ${{ needs.deploy-model-and-agent.outputs.deployment_name }}
-      agent_id: ${{ needs.deploy-model-and-agent.outputs.agent_id }}
-      function_app_url: ${{ needs.deploy-model-and-agent.outputs.function_app_url }}
-      azure_endpoint: ${{ needs.deploy-model-and-agent.outputs.azure_openai_endpoint }}
-      api_version: '2024-10-21'
-      agent_data_file: 'weather_test.json'
-      genai_data_file: 'genai_evaluation_test.json'
-    secrets:
-      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-      AZURE_OPENAI_API_KEY: ${{ needs.deploy-model-and-agent.outputs.azure_openai_api_key }}
+      - name: Azure login using Federated Credentials
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-  blue-green-deployment:
-    name: Blue/Green Deployment with Approval
-    needs: [deploy-model-and-agent, run-combined-evaluation]
-    if: ${{ inputs.run_blue_green == true && needs.run-combined-evaluation.result == 'success' }}
-    uses: ./.github/workflows/blue-green-deployment-with-approval.yml
-    with:
-      environment: ${{ inputs.environment }}
-      project_endpoint: ${{ needs.deploy-model-and-agent.outputs.project_endpoint }}
-      deployment_name: ${{ needs.deploy-model-and-agent.outputs.deployment_name }}
-      agent_id: ${{ needs.deploy-model-and-agent.outputs.agent_id }}
-      evaluation_results: "Combined evaluation completed on ${{ github.run_id }}. Agent: ${{ needs.deploy-model-and-agent.outputs.agent_id }}. Model: ${{ needs.deploy-model-and-agent.outputs.deployment_name }}. Check job artifacts for detailed results."
-      evaluation_passed: ${{ needs.run-combined-evaluation.result == 'success' }}
-    secrets:
-      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies for function implementations
+        run: |
+          pip install requests
+
+      - name: Run AI Agent Evaluation
+        id: ai-agent-evaluation
+        continue-on-error: true
+        uses: microsoft/ai-agent-evals@v2-beta
+        with:
+          azure-ai-project-endpoint: ${{ inputs.project_endpoint }}
+          deployment-name: ${{ inputs.deployment_name }}
+          agent-ids: ${{ inputs.agent_id }}
+          data-path: ${{ github.workspace }}/evaluations/${{ inputs.data_file }}
+
+      - name: Check evaluation results
+        id: check-results
+        run: |
+          if [ "${{ steps.ai-agent-evaluation.outcome }}" == "success" ]; then
+            echo "passed=true" >> $GITHUB_OUTPUT
+            echo "✅ AI Agent evaluation completed successfully"
+          else
+            echo "passed=false" >> $GITHUB_OUTPUT
+            echo "❌ AI Agent evaluation failed"
+          fi
+
+      - name: Create evaluation summary
+        id: create-summary
+        run: |
+          SUMMARY="AI Agent Evaluation completed on $(date). "
+          SUMMARY+="Agent: ${{ inputs.agent_id }}. "
+          SUMMARY+="Model: ${{ inputs.deployment_name }}. "
+          SUMMARY+="Status: ${{ steps.ai-agent-evaluation.outcome }}. "
+          SUMMARY+="Test data: ${{ inputs.data_file }}. "
+          SUMMARY+="Evaluators: Tool calling, intent resolution, task adherence, RAG, and safety."
+          
+          echo "summary=${SUMMARY}" >> $GITHUB_OUTPUT
+          
+          echo "## 🤖 AI Agent Evaluation Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Agent ID**: ${{ inputs.agent_id }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Model Deployment**: ${{ inputs.deployment_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Test Data**: ${{ inputs.data_file }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Status**: ${{ steps.ai-agent-evaluation.outcome == 'success' && '✅ Success' || '❌ Failed' }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Agent-Specific Evaluators:" >> $GITHUB_STEP_SUMMARY
+          echo "- **Tool Calling**: ToolCallAccuracyEvaluator" >> $GITHUB_STEP_SUMMARY
+          echo "- **Intent**: IntentResolutionEvaluator" >> $GITHUB_STEP_SUMMARY
+          echo "- **Task Adherence**: TaskAdherenceEvaluator" >> $GITHUB_STEP_SUMMARY
+          echo "- **RAG**: RelevanceEvaluator, GroundednessEvaluator" >> $GITHUB_STEP_SUMMARY
+          echo "- **Safety**: ViolenceEvaluator" >> $GITHUB_STEP_SUMMARY
+          echo "- **Quality**: CoherenceEvaluator" >> $GITHUB_STEP_SUMMARY
+
+  json-validation:
+    name: JSON Response Validation
+    runs-on: ubuntu-latest
+    needs: run-action  # Run after AI Foundry Evaluation completes to avoid rate limiting
+    steps:
+      - name: Wait for rate limit cooldown
+        run: sleep 30  # Brief pause to avoid rate limiting issues
+        
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Azure login using Federated Credentials
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Install Azure AI SDK
+        run: |
+          pip install azure-ai-projects==1.0.0 azure-ai-agents==1.1.0 azure-identity
+
+      - name: Run JSON Validation Tests
+        env:
+          PROJECT_ENDPOINT: ${{ inputs.project_endpoint }}
+          AGENT_ID: ${{ inputs.agent_id }}
+          AGENT_NAME: 'Weather News Agent'
+          FUNCTION_APP_URL: ${{ inputs.function_app_url }}
+        run: |
+          python scripts/validate_json_responses_azure_functions.py
+
+      - name: Upload JSON Validation Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: json-validation-results
+          path: json_validation_results_azure_functions.json
+          retention-days: 30

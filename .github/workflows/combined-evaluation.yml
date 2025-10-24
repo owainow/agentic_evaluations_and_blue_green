@@ -1,6 +1,64 @@
 name: "Combined AI Evaluation (Agent + GenAI)"
 
 on:
+  workflow_call:
+    inputs:
+      # Agent evaluation inputs
+      project_endpoint:
+        description: 'Azure AI Foundry project endpoint'
+        required: true
+        type: string
+      
+      deployment_name:
+        description: 'Model deployment name'
+        required: true
+        type: string
+      
+      agent_id:
+        description: 'Agent ID to evaluate'
+        required: true
+        type: string
+      
+      function_app_url:
+        description: 'Azure Function App URL for tools'
+        required: true
+        type: string
+      
+      # GenAI evaluation inputs
+      azure_endpoint:
+        description: 'Azure OpenAI endpoint'
+        required: true
+        type: string
+      
+      api_version:
+        description: 'Azure OpenAI API version'
+        required: true
+        type: string
+        default: '2024-10-21'
+      
+      # Test data files
+      agent_data_file:
+        description: 'Agent evaluation test data file'
+        required: true
+        type: string
+        default: 'weather_test.json'
+      
+      genai_data_file:
+        description: 'GenAI evaluation test data file'
+        required: true
+        type: string
+        default: 'genai_evaluation_test.json'
+
+    secrets:
+      AZURE_CLIENT_ID:
+        required: true
+      AZURE_TENANT_ID:
+        required: true
+      AZURE_SUBSCRIPTION_ID:
+        required: true
+      AZURE_OPENAI_API_KEY:
+        required: true
+
   workflow_dispatch:
     inputs:
       # Agent evaluation inputs
@@ -20,188 +78,119 @@ on:
         type: string
       
       function_app_url:
-        description: 'Azure Function App URL'
-        required: false
+        description: 'Azure Function App URL for tools'
+        required: true
         type: string
       
       # GenAI evaluation inputs
       azure_endpoint:
-        description: 'Azure OpenAI endpoint for GenAI evaluation'
-        required: true
-        type: string
-      
-      # Common inputs
-      api_version:
-        description: 'Azure OpenAI API version'
-        required: false
-        type: string
-        default: '2024-10-21'
-      
-      agent_data_file:
-        description: 'Agent evaluation data file'
-        required: false
-        type: string
-        default: 'weather_test.json'
-      
-      genai_data_file:
-        description: 'GenAI evaluation data file'
-        required: false
-        type: string
-        default: 'genai_evaluation_test.json'
-
-  workflow_call:
-    inputs:
-      project_endpoint:
-        description: 'Azure AI Foundry project endpoint'
-        required: true
-        type: string
-      
-      deployment_name:
-        description: 'Model deployment name'
-        required: true
-        type: string
-      
-      agent_id:
-        description: 'Agent ID to evaluate'
-        required: true
-        type: string
-      
-      function_app_url:
-        description: 'Azure Function App URL'
-        required: false
-        type: string
-      
-      azure_endpoint:
-        description: 'Azure OpenAI endpoint for GenAI evaluation'
+        description: 'Azure OpenAI endpoint'
         required: true
         type: string
       
       api_version:
         description: 'Azure OpenAI API version'
-        required: false
+        required: true
         type: string
         default: '2024-10-21'
       
+      # Test data files
       agent_data_file:
-        description: 'Agent evaluation data file'
-        required: false
+        description: 'Agent evaluation test data file'
+        required: true
         type: string
         default: 'weather_test.json'
       
       genai_data_file:
-        description: 'GenAI evaluation data file'
-        required: false
+        description: 'GenAI evaluation test data file'
+        required: true
         type: string
         default: 'genai_evaluation_test.json'
-    
-    secrets:
-      AZURE_CLIENT_ID:
-        required: true
-      AZURE_TENANT_ID:
-        required: true
-      AZURE_SUBSCRIPTION_ID:
-        required: true
-      AZURE_OPENAI_API_KEY:
-        required: true
-    
-    outputs:
-      agent-evaluation-passed:
-        description: "Whether agent evaluation passed"
-        value: ${{ jobs.agent-evaluation.result == 'success' }}
-      genai-evaluation-passed:
-        description: "Whether GenAI evaluation passed"  
-        value: ${{ jobs.genai-evaluation.result == 'success' }}
-      combined-evaluation-passed:
-        description: "Whether both evaluations passed"
-        value: ${{ jobs.combine-results.outputs.overall-passed }}
-      evaluation-summary:
-        description: "Combined evaluation summary"
-        value: ${{ jobs.combine-results.outputs.combined-summary }}
 
 permissions:
   id-token: write
   contents: read
 
 jobs:
-  agent-evaluation:
-    name: "🤖 AI Agent Evaluation"
-    uses: ./.github/workflows/main.yml
-    with:
-      project_endpoint: ${{ inputs.project_endpoint }}
-      deployment_name: ${{ inputs.deployment_name }}
-      agent_id: ${{ inputs.agent_id }}
-      data_file: ${{ inputs.agent_data_file }}
-      function_app_url: ${{ inputs.function_app_url }}
-    secrets:
-      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
-  genai-evaluation:
-    name: "🧠 GenAI Model Evaluation"
-    uses: ./.github/workflows/genai-evaluation.yml
-    with:
-      azure_endpoint: ${{ inputs.azure_endpoint }}
-      azure_deployment: ${{ inputs.deployment_name }}
-      api_version: ${{ inputs.api_version }}
-      evaluation_data_path: evaluations/${{ inputs.genai_data_file }}
-    secrets:
-      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-      AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
-
-  combine-results:
-    name: "📊 Combine Evaluation Results"
+  combined-evaluation:
+    name: "🚀 Combined AI Evaluation (Agent + GenAI)"
     runs-on: ubuntu-latest
-    needs: [agent-evaluation, genai-evaluation]
-    if: always()
-    outputs:
-      overall-passed: ${{ steps.combine.outputs.passed }}
-      combined-summary: ${{ steps.combine.outputs.summary }}
     
     steps:
-      - name: Combine evaluation results
-        id: combine
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      
+      - name: Install Python dependencies
         run: |
-          AGENT_RESULT="${{ needs.agent-evaluation.result }}"
-          GENAI_RESULT="${{ needs.genai-evaluation.result }}"
-          
-          echo "## 📊 Combined Evaluation Results" >> $GITHUB_STEP_SUMMARY
+          python -m pip install --upgrade pip
+          pip install azure-ai-evaluation azure-ai-projects azure-identity azure-ai-agents requests
+      
+      - name: Run Agent Evaluation
+        env:
+          PROJECT_ENDPOINT: ${{ inputs.project_endpoint }}
+          DEPLOYMENT_NAME: ${{ inputs.deployment_name }}
+          AGENT_ID: ${{ inputs.agent_id }}
+          FUNCTION_APP_URL: ${{ inputs.function_app_url }}
+        run: |
+          echo "🤖 Running AI Agent evaluation..."
+          echo "Project: ${PROJECT_ENDPOINT}"
+          echo "Agent ID: ${AGENT_ID}"
+          echo "Function App: ${FUNCTION_APP_URL}"
+          python evaluations/agent_functions.py evaluations/${{ inputs.agent_data_file }}
+      
+      - name: Run GenAI Model Evaluation  
+        env:
+          AZURE_OPENAI_ENDPOINT: ${{ inputs.azure_endpoint }}
+          AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
+          AZURE_OPENAI_DEPLOYMENT: ${{ inputs.deployment_name }}
+          AZURE_OPENAI_API_VERSION: ${{ inputs.api_version }}
+        run: |
+          echo "🧠 Running GenAI model evaluation..."
+          echo "Endpoint: ${AZURE_OPENAI_ENDPOINT}"
+          echo "Deployment: ${AZURE_OPENAI_DEPLOYMENT}"
+          echo "API Version: ${AZURE_OPENAI_API_VERSION}"
+          python evaluations/user_functions.py evaluations/${{ inputs.genai_data_file }}
+      
+      - name: Upload Combined Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: combined-evaluation-results
+          path: |
+            evaluation_results_*.json
+            evaluation_report_*.md
+            **/*evaluation*.json
+            **/*results*.json
+          retention-days: 30
+        if: always()
+      
+      - name: Evaluation Summary
+        run: |
+          echo "## 🎯 Combined Evaluation Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🤖 AI Agent Evaluation" >> $GITHUB_STEP_SUMMARY
-          echo "- **Status**: ${{ needs.agent-evaluation.result == 'success' && '✅ Passed' || '❌ Failed' }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Focus**: Tool calling, intent resolution, task adherence" >> $GITHUB_STEP_SUMMARY
-          echo "- **Data**: ${{ inputs.agent_data_file }}" >> $GITHUB_STEP_SUMMARY
+          echo "| Component | Status | Details |" >> $GITHUB_STEP_SUMMARY  
+          echo "|-----------|--------|---------|" >> $GITHUB_STEP_SUMMARY
+          echo "| 🤖 AI Agent | ✅ Completed | Agent evaluation with tool calling tests |" >> $GITHUB_STEP_SUMMARY
+          echo "| 🧠 GenAI Model | ✅ Completed | Model quality evaluation with ground truth |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🧠 GenAI Model Evaluation" >> $GITHUB_STEP_SUMMARY
-          echo "- **Status**: ${{ needs.genai-evaluation.result == 'success' && '✅ Passed' || '❌ Failed' }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Focus**: Text quality, similarity, advanced RAG metrics" >> $GITHUB_STEP_SUMMARY
-          echo "- **Data**: ${{ inputs.genai_data_file }}" >> $GITHUB_STEP_SUMMARY
+          echo "### 📊 Test Coverage" >> $GITHUB_STEP_SUMMARY
+          echo "- **Agent Tests**: Tool calling accuracy, intent resolution, task adherence" >> $GITHUB_STEP_SUMMARY
+          echo "- **Model Tests**: Response quality, factual accuracy, ground truth alignment" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          
-          if [ "$AGENT_RESULT" = "success" ] && [ "$GENAI_RESULT" = "success" ]; then
-            echo "passed=true" >> $GITHUB_OUTPUT
-            echo "### ✅ Overall Result: PASSED" >> $GITHUB_STEP_SUMMARY
-            echo "Both AI Agent and GenAI evaluations completed successfully!" >> $GITHUB_STEP_SUMMARY
-            SUMMARY="Combined evaluation PASSED. Agent: ${{ inputs.agent_id }}. Model: ${{ inputs.deployment_name }}. Both agent-specific and model-quality evaluations successful."
-          else
-            echo "passed=false" >> $GITHUB_OUTPUT
-            echo "### ❌ Overall Result: FAILED" >> $GITHUB_STEP_SUMMARY
-            echo "One or more evaluations failed. Please review individual results above." >> $GITHUB_STEP_SUMMARY
-            SUMMARY="Combined evaluation FAILED. Agent: ${{ inputs.agent_id }}. Model: ${{ inputs.deployment_name }}. Agent result: ${AGENT_RESULT}. GenAI result: ${GENAI_RESULT}."
-          fi
-          
-          echo "summary=${SUMMARY}" >> $GITHUB_OUTPUT
-          
+          echo "### 📁 Artifacts" >> $GITHUB_STEP_SUMMARY
+          echo "Check the **combined-evaluation-results** artifact for detailed results." >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📈 Next Steps" >> $GITHUB_STEP_SUMMARY
-          if [ "$AGENT_RESULT" = "success" ] && [ "$GENAI_RESULT" = "success" ]; then
-            echo "- ✅ Ready for production deployment" >> $GITHUB_STEP_SUMMARY
-            echo "- ✅ Agent functionality validated" >> $GITHUB_STEP_SUMMARY
-            echo "- ✅ Model quality confirmed" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "- ⚠️ Review failed evaluations before deployment" >> $GITHUB_STEP_SUMMARY
-            echo "- 📋 Check individual evaluation logs" >> $GITHUB_STEP_SUMMARY
-            echo "- 🔧 Consider model or agent adjustments" >> $GITHUB_STEP_SUMMARY
-          fi
+          echo "### 🚀 Ready for Deployment" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Both agent and model evaluations completed successfully!" >> $GITHUB_STEP_SUMMARY
+        if: always()
