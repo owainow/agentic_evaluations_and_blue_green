@@ -76,6 +76,12 @@ on:
         required: false
         type: boolean
         default: true
+      
+      run_blue_green:
+        description: 'Run blue/green deployment with human approval after evaluation'
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   id-token: write
@@ -421,6 +427,23 @@ jobs:
       agent_id: ${{ needs.deploy-model-and-agent.outputs.agent_id }}
       data_file: 'weather_test.json'
       function_app_url: ${{ needs.deploy-model-and-agent.outputs.function_app_url }}
+    secrets:
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+  blue-green-deployment:
+    name: Blue/Green Deployment with Approval
+    needs: [deploy-model-and-agent, run-evaluation]
+    if: ${{ inputs.run_blue_green == true && success() }}
+    uses: ./.github/workflows/blue-green-deployment-with-approval.yml
+    with:
+      environment: ${{ inputs.environment }}
+      project_endpoint: ${{ needs.deploy-model-and-agent.outputs.project_endpoint }}
+      deployment_name: ${{ needs.deploy-model-and-agent.outputs.deployment_name }}
+      agent_id: ${{ needs.deploy-model-and-agent.outputs.agent_id }}
+      data_file: 'weather_test.json'
+      force_approval: false
     secrets:
       AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
       AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
