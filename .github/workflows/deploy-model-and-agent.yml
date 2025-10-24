@@ -79,7 +79,7 @@ on:
         description: 'Second model version'
         required: false
         type: string
-        default: '2024-04-09'
+        default: 'turbo-2024-04-09'
       
       agent_name_2:
         description: 'Name for the second agent'
