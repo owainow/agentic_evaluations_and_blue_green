@@ -53,7 +53,7 @@ on:
         description: 'Name for the agent'
         required: true
         type: string
-        default: 'test-agent'
+        default: 'test-agent-gpt4o'
       
       agent_instructions:
         description: 'Instructions for the agent'
