@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.31.92.45157",
-      "templateHash": "6674617410647321018"
+      "templateHash": "4644906876531795748"
     }
   },
   "parameters": {
@@ -44,6 +44,13 @@
         "description": "Custom name for the Function App (optional)"
       }
     },
+    "githubActionsServicePrincipalId": {
+      "type": "string",
+      "defaultValue": "",
+      "metadata": {
+        "description": "GitHub Actions Service Principal Object ID for role assignments (optional)"
+      }
+    },
     "tags": {
       "type": "object",
       "defaultValue": {
@@ -64,7 +71,11 @@
     "storageBlobDataContributorRoleId": "ba92f5b4-2d11-453d-a403-e96b0029c9fe",
     "storageQueueDataContributorRoleId": "974c5e8b-45b9-4653-ba55-5f855dd0fb88",
     "storageTableDataContributorRoleId": "0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3",
-    "monitoringMetricsPublisherRoleId": "3913510d-42f4-4e42-8a64-420c390055eb"
+    "monitoringMetricsPublisherRoleId": "3913510d-42f4-4e42-8a64-420c390055eb",
+    "azureAIFoundryAgentCreatorRoleId": "76ddb49b-0538-4c6b-9861-5b22c6b5e8ce",
+    "searchServiceContributorRoleId": "7ca78c08-252a-4471-8644-bb5ff32d4ba0",
+    "searchIndexDataContributorRoleId": "8ebe5a00-799e-43f5-93ac-243d3dce84a7",
+    "searchIndexDataReaderRoleId": "1407120a-92aa-4202-b7e9-c0e197c71c8f"
   },
   "resources": [
     {
@@ -98,11 +109,10 @@
         "AzureWebJobsStorage__credential": "managedidentity",
         "AzureWebJobsStorage__clientId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity-{1}-{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix'))), '2023-01-31').clientId]",
         "FUNCTIONS_EXTENSION_VERSION": "~4",
-        "APPLICATIONINSIGHTS_INSTRUMENTATIONKEY": "[reference(resourceId('Microsoft.Insights/components', format('{0}-appins-{1}-{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix'))), '2020-02-02').InstrumentationKey]",
+        "APPLICATIONINSIGHTS_CONNECTION_STRING": "[reference(resourceId('Microsoft.Insights/components', format('{0}-appins-{1}-{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix'))), '2020-02-02').ConnectionString]",
         "APPLICATIONINSIGHTS_AUTHENTICATION_STRING": "[format('ClientId={0};Authorization=AAD', reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity-{1}-{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix'))), '2023-01-31').clientId)]",
         "PYTHON_ISOLATE_WORKER_DEPENDENCIES": "1",
-        "ENABLE_ORYX_BUILD": "true",
-        "SCM_DO_BUILD_DURING_DEPLOYMENT": "true"
+        "AzureWebJobsDisableHomepage": "true"
       },
       "dependsOn": [
         "[resourceId('Microsoft.Insights/components', format('{0}-appins-{1}-{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix')))]",
@@ -177,6 +187,39 @@
       }
     },
     {
+      "type": "Microsoft.Search/searchServices",
+      "apiVersion": "2024-06-01-preview",
+      "name": "[format('{0}-search-{1}-{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix'))]",
+      "location": "[parameters('location')]",
+      "tags": "[union(parameters('tags'), createObject('Purpose', 'AI Search for Knowledge Retrieval'))]",
+      "sku": {
+        "name": "basic"
+      },
+      "identity": {
+        "type": "SystemAssigned"
+      },
+      "properties": {
+        "replicaCount": 1,
+        "partitionCount": 1,
+        "hostingMode": "default",
+        "publicNetworkAccess": "enabled",
+        "networkRuleSet": {
+          "bypass": "AzurePortal",
+          "ipRules": []
+        },
+        "encryptionWithCmk": {
+          "enforcement": "Unspecified"
+        },
+        "disableLocalAuth": false,
+        "authOptions": {
+          "aadOrApiKey": {
+            "aadAuthFailureMode": "http401WithBearerChallenge"
+          }
+        },
+        "semanticSearch": "free"
+      }
+    },
+    {
       "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
       "apiVersion": "2023-01-31",
       "name": "[format('{0}-identity-{1}-{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix'))]",
@@ -229,6 +272,12 @@
             }
           },
           "scaleAndConcurrency": {
+            "alwaysReady": [
+              {
+                "name": "http",
+                "instanceCount": 1
+              }
+            ],
             "maximumInstanceCount": 100,
             "instanceMemoryMB": 2048
           },
@@ -246,6 +295,25 @@
       ]
     },
     {
+      "type": "Microsoft.OperationalInsights/workspaces",
+      "apiVersion": "2023-09-01",
+      "name": "[format('{0}-logs-{1}-{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix'))]",
+      "location": "[parameters('location')]",
+      "tags": "[parameters('tags')]",
+      "properties": {
+        "sku": {
+          "name": "PerGB2018"
+        },
+        "retentionInDays": 30,
+        "features": {
+          "enableLogAccessUsingOnlyResourcePermissions": true
+        },
+        "workspaceCapping": {
+          "dailyQuotaGb": 1
+        }
+      }
+    },
+    {
       "type": "Microsoft.Insights/components",
       "apiVersion": "2020-02-02",
       "name": "[format('{0}-appins-{1}-{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix'))]",
@@ -256,8 +324,12 @@
         "Application_Type": "web",
         "DisableLocalAuth": true,
         "publicNetworkAccessForIngestion": "Enabled",
-        "publicNetworkAccessForQuery": "Enabled"
-      }
+        "publicNetworkAccessForQuery": "Enabled",
+        "WorkspaceResourceId": "[resourceId('Microsoft.OperationalInsights/workspaces', format('{0}-logs-{1}-{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix')))]"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.OperationalInsights/workspaces', format('{0}-logs-{1}-{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix')))]"
+      ]
     },
     {
       "type": "Microsoft.Authorization/roleAssignments",
@@ -338,6 +410,70 @@
         "[resourceId('Microsoft.Insights/components', format('{0}-appins-{1}-{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix')))]",
         "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity-{1}-{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix')))]"
       ]
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[format('Microsoft.CognitiveServices/accounts/{0}', variables('aiFoundryName'))]",
+      "name": "[guid(subscription().id, resourceId('Microsoft.CognitiveServices/accounts', variables('aiFoundryName')), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity-{1}-{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix'))), variables('azureAIFoundryAgentCreatorRoleId'))]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('azureAIFoundryAgentCreatorRoleId'))]",
+        "principalId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity-{1}-{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix'))), '2023-01-31').principalId]",
+        "principalType": "ServicePrincipal",
+        "description": "Grants managed identity access to create and manage agents in Azure AI Foundry"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.CognitiveServices/accounts', variables('aiFoundryName'))]",
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity-{1}-{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[format('Microsoft.Search/searchServices/{0}', format('{0}-search-{1}-{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix')))]",
+      "name": "[guid(subscription().id, resourceId('Microsoft.Search/searchServices', format('{0}-search-{1}-{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix'))), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity-{1}-{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix'))), variables('searchServiceContributorRoleId'))]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('searchServiceContributorRoleId'))]",
+        "principalId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity-{1}-{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix'))), '2023-01-31').principalId]",
+        "principalType": "ServicePrincipal",
+        "description": "Grants managed identity contributor access to Azure AI Search service"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Search/searchServices', format('{0}-search-{1}-{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix')))]",
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity-{1}-{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[format('Microsoft.Search/searchServices/{0}', format('{0}-search-{1}-{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix')))]",
+      "name": "[guid(subscription().id, resourceId('Microsoft.Search/searchServices', format('{0}-search-{1}-{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix'))), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity-{1}-{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix'))), variables('searchIndexDataContributorRoleId'))]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('searchIndexDataContributorRoleId'))]",
+        "principalId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity-{1}-{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix'))), '2023-01-31').principalId]",
+        "principalType": "ServicePrincipal",
+        "description": "Grants managed identity contributor access to search indexes for data ingestion"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Search/searchServices', format('{0}-search-{1}-{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix')))]",
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', format('{0}-identity-{1}-{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[format('Microsoft.Search/searchServices/{0}', format('{0}-search-{1}-{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix')))]",
+      "name": "[guid(subscription().id, resourceId('Microsoft.Search/searchServices', format('{0}-search-{1}-{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix'))), resourceId('Microsoft.CognitiveServices/accounts/projects', variables('aiFoundryName'), variables('projectName')), variables('searchIndexDataReaderRoleId'))]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('searchIndexDataReaderRoleId'))]",
+        "principalId": "[reference(resourceId('Microsoft.CognitiveServices/accounts/projects', variables('aiFoundryName'), variables('projectName')), '2025-04-01-preview', 'full').identity.principalId]",
+        "principalType": "ServicePrincipal",
+        "description": "Grants AI Foundry project read access to search indexes for agent queries"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.CognitiveServices/accounts/projects', variables('aiFoundryName'), variables('projectName'))]",
+        "[resourceId('Microsoft.Search/searchServices', format('{0}-search-{1}-{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix')))]"
+      ]
     }
   ],
   "outputs": {
@@ -396,6 +532,34 @@
     "applicationInsightsConnectionString": {
       "type": "string",
       "value": "[reference(resourceId('Microsoft.Insights/components', format('{0}-appins-{1}-{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix'))), '2020-02-02').ConnectionString]"
+    },
+    "applicationInsightsInstrumentationKey": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Insights/components', format('{0}-appins-{1}-{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix'))), '2020-02-02').InstrumentationKey]"
+    },
+    "logAnalyticsWorkspaceName": {
+      "type": "string",
+      "value": "[format('{0}-logs-{1}-{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix'))]"
+    },
+    "logAnalyticsWorkspaceId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.OperationalInsights/workspaces', format('{0}-logs-{1}-{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix')))]"
+    },
+    "searchServiceName": {
+      "type": "string",
+      "value": "[format('{0}-search-{1}-{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix'))]"
+    },
+    "searchServiceUrl": {
+      "type": "string",
+      "value": "[format('https://{0}.search.windows.net', format('{0}-search-{1}-{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix')))]"
+    },
+    "searchServiceId": {
+      "type": "string",
+      "value": "[resourceId('Microsoft.Search/searchServices', format('{0}-search-{1}-{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix')))]"
+    },
+    "searchServicePrincipalId": {
+      "type": "string",
+      "value": "[reference(resourceId('Microsoft.Search/searchServices', format('{0}-search-{1}-{2}', parameters('baseName'), parameters('environment'), variables('uniqueSuffix'))), '2024-06-01-preview', 'full').identity.principalId]"
     }
   }
 }

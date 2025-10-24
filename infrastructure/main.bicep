@@ -132,6 +132,44 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2023-05-01' = {
 }
 
 // ============================================================================
+// AZURE AI SEARCH (for Knowledge Retrieval and RAG)
+// ============================================================================
+
+resource searchService 'Microsoft.Search/searchServices@2024-06-01-preview' = {
+  name: '${baseName}-search-${environment}-${uniqueSuffix}'
+  location: location
+  tags: union(tags, {
+    Purpose: 'AI Search for Knowledge Retrieval'
+  })
+  sku: {
+    name: 'basic' // Basic tier supports vector search
+  }
+  identity: {
+    type: 'SystemAssigned'
+  }
+  properties: {
+    replicaCount: 1
+    partitionCount: 1
+    hostingMode: 'default'
+    publicNetworkAccess: 'enabled'
+    networkRuleSet: {
+      bypass: 'AzurePortal'
+      ipRules: []
+    }
+    encryptionWithCmk: {
+      enforcement: 'Unspecified'
+    }
+    disableLocalAuth: false // Allow API key access for initial setup
+    authOptions: {
+      aadOrApiKey: {
+        aadAuthFailureMode: 'http401WithBearerChallenge'
+      }
+    }
+    semanticSearch: 'free' // Enable semantic search
+  }
+}
+
+// ============================================================================
 // MANAGED IDENTITY (for Function App)
 // ============================================================================
 // User-assigned managed identity is recommended for Flex Consumption
@@ -282,6 +320,10 @@ var storageQueueDataContributorRoleId = '974c5e8b-45b9-4653-ba55-5f855dd0fb88'
 var storageTableDataContributorRoleId = '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3'
 var monitoringMetricsPublisherRoleId = '3913510d-42f4-4e42-8a64-420c390055eb'
 var azureAIFoundryAgentCreatorRoleId = '76ddb49b-0538-4c6b-9861-5b22c6b5e8ce' // Custom role for agent creation
+// Azure AI Search role IDs
+var searchServiceContributorRoleId = '7ca78c08-252a-4471-8644-bb5ff32d4ba0'
+var searchIndexDataContributorRoleId = '8ebe5a00-799e-43f5-93ac-243d3dce84a7'
+var searchIndexDataReaderRoleId = '1407120a-92aa-4202-b7e9-c0e197c71c8f'
 
 // User-assigned identity needs Storage Blob Data Owner
 resource roleAssignmentBlobDataOwner 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
@@ -355,6 +397,41 @@ resource roleAssignmentAIFoundryAgentCreator 'Microsoft.Authorization/roleAssign
   }
 }
 
+// Role assignments for Azure AI Search service
+resource roleAssignmentSearchServiceContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(subscription().id, searchService.id, userAssignedIdentity.id, searchServiceContributorRoleId)
+  scope: searchService
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', searchServiceContributorRoleId)
+    principalId: userAssignedIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+    description: 'Grants managed identity contributor access to Azure AI Search service'
+  }
+}
+
+resource roleAssignmentSearchIndexDataContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(subscription().id, searchService.id, userAssignedIdentity.id, searchIndexDataContributorRoleId)
+  scope: searchService
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', searchIndexDataContributorRoleId)
+    principalId: userAssignedIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+    description: 'Grants managed identity contributor access to search indexes for data ingestion'
+  }
+}
+
+// Role assignment for AI Foundry project's system-assigned identity to access search
+resource roleAssignmentAIProjectSearchReader 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(subscription().id, searchService.id, aiProject.id, searchIndexDataReaderRoleId)
+  scope: searchService
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', searchIndexDataReaderRoleId)
+    principalId: aiProject.identity.principalId
+    principalType: 'ServicePrincipal'
+    description: 'Grants AI Foundry project read access to search indexes for agent queries'
+  }
+}
+
 // ============================================================================
 // OUTPUTS
 // ============================================================================
@@ -380,3 +457,9 @@ output applicationInsightsConnectionString string = applicationInsights.properti
 output applicationInsightsInstrumentationKey string = applicationInsights.properties.InstrumentationKey
 output logAnalyticsWorkspaceName string = logAnalyticsWorkspace.name
 output logAnalyticsWorkspaceId string = logAnalyticsWorkspace.id
+
+// Azure AI Search outputs
+output searchServiceName string = searchService.name
+output searchServiceUrl string = 'https://${searchService.name}.search.windows.net'
+output searchServiceId string = searchService.id
+output searchServicePrincipalId string = searchService.identity.principalId
