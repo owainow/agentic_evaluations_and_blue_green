@@ -71,17 +71,95 @@ on:
         type: string
         default: 'You are an agent that provides responses in JSON only. You are to follow a standard JSON request format with a "response" field containing the answer. For weather queries you must always reply with a strucutred JSON response of: field: location field: temperature field: temperature_unit field: condition field: humidity_percent field: wind_speed_kmh field: timestamp. For news queries you must always reply with field: timestamp field: articles field: article_count field: topic '
       
-      run_evaluation:
-        description: 'Run evaluation after agent creation'
+      run_blue_green:
+        description: 'Run blue/green deployment with human approval after evaluation'
         required: false
         type: boolean
-        default: true
+        default: false
+
+  workflow_call:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        type: string
+      
+      model_name:
+        description: 'Model to deploy'
+        required: true
+        type: string
+      
+      model_version:
+        description: 'Model version'
+        required: true
+        type: string
+      
+      deployment_name:
+        description: 'Name for the model deployment (leave empty to auto-generate)'
+        required: false
+        type: string
+      
+      sku_name:
+        description: 'Deployment SKU type'
+        required: true
+        type: string
+      
+      capacity:
+        description: 'Deployment capacity (TPM in thousands)'
+        required: true
+        type: number
+      
+      agent_name:
+        description: 'Name for the agent'
+        required: true
+        type: string
+      
+      agent_instructions:
+        description: 'Instructions for the agent'
+        required: false
+        type: string
+        default: 'You are an agent that provides responses in JSON only. You are to follow a standard JSON request format with a "response" field containing the answer. For weather queries you must always reply with a strucutred JSON response of: field: location field: temperature field: temperature_unit field: condition field: humidity_percent field: wind_speed_kmh field: timestamp. For news queries you must always reply with field: timestamp field: articles field: article_count field: topic '
       
       run_blue_green:
         description: 'Run blue/green deployment with human approval after evaluation'
         required: false
         type: boolean
         default: false
+    secrets:
+      AZURE_CLIENT_ID:
+        required: true
+      AZURE_TENANT_ID:
+        required: true
+      AZURE_SUBSCRIPTION_ID:
+        required: true
+    outputs:
+      deployment_name:
+        description: 'The deployed model deployment name'
+        value: ${{ jobs.deploy-model-and-agent.outputs.deployment_name }}
+      agent_id:
+        description: 'The created agent ID'
+        value: ${{ jobs.deploy-model-and-agent.outputs.agent_id }}
+      agent_name:
+        description: 'The created agent name'
+        value: ${{ jobs.deploy-model-and-agent.outputs.agent_name }}
+      project_endpoint:
+        description: 'The AI Foundry project endpoint'
+        value: ${{ jobs.deploy-model-and-agent.outputs.project_endpoint }}
+      project_name:
+        description: 'The AI Foundry project name'
+        value: ${{ jobs.deploy-model-and-agent.outputs.project_name }}
+      function_app_name:
+        description: 'The Azure Function App name'
+        value: ${{ jobs.deploy-model-and-agent.outputs.function_app_name }}
+      function_app_url:
+        description: 'The Azure Function App URL'
+        value: ${{ jobs.deploy-model-and-agent.outputs.function_app_url }}
+      azure_openai_api_key:
+        description: 'The Azure OpenAI API key'
+        value: ${{ jobs.deploy-model-and-agent.outputs.azure_openai_api_key }}
+      azure_openai_endpoint:
+        description: 'The Azure OpenAI endpoint'
+        value: ${{ jobs.deploy-model-and-agent.outputs.azure_openai_endpoint }}
 
 permissions:
   id-token: write
@@ -183,6 +261,38 @@ jobs:
             -o table)
           
           echo "$DEPLOYMENT_STATUS"
+
+      - name: Get Azure OpenAI API Key
+        id: openai_credentials
+        shell: bash
+        run: |
+          echo "Getting Azure OpenAI API key from AI Services..."
+          
+          # Get the API key from the AI Services account
+          API_KEY=$(az cognitiveservices account keys list \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --name ${{ steps.ai_services.outputs.ai_services_name }} \
+            --query 'key1' \
+            -o tsv)
+          
+          if [ -z "$API_KEY" ]; then
+            echo "Error: Could not retrieve API key"
+            exit 1
+          fi
+          
+          # Mask the API key in logs for security
+          echo "::add-mask::${API_KEY}"
+          echo "api_key=${API_KEY}" >> $GITHUB_OUTPUT
+          
+          # Also get the endpoint for GenAI evaluation
+          AZURE_ENDPOINT=$(az cognitiveservices account show \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --name ${{ steps.ai_services.outputs.ai_services_name }} \
+            --query 'properties.endpoint' \
+            -o tsv)
+          
+          echo "azure_endpoint=${AZURE_ENDPOINT}" >> $GITHUB_OUTPUT
+          echo "✅ Retrieved Azure OpenAI credentials for evaluation"
       
       - name: Get AI Foundry Project Details
         id: project_details
@@ -392,20 +502,6 @@ jobs:
           
           ## Next Steps
           
-          EOF
-          
-          if [ "${{ inputs.run_evaluation }}" == "true" ] && [ "${{ steps.create_agent.outcome }}" == "success" ]; then
-            cat >> $GITHUB_STEP_SUMMARY << 'EOF'
-          1. **Evaluation will run automatically** in the next job
-          2. **Test the agent** in Azure AI Foundry Studio: [https://ai.azure.com](https://ai.azure.com)
-             - Navigate to your project
-             - Click "My agents" in the left menu
-             - Find your agent: ${{ inputs.agent_name }}
-          3. **Use the agent** via Azure AI Projects SDK (see examples in docs)
-          4. **Monitor usage** in the AI Services resource
-          EOF
-          else
-            cat >> $GITHUB_STEP_SUMMARY << 'EOF'
           1. **Test the agent** in Azure AI Foundry Studio: [https://ai.azure.com](https://ai.azure.com)
              - Navigate to your project
              - Click "My agents" in the left menu
@@ -425,36 +521,5 @@ jobs:
       project_name: ${{ steps.project_details.outputs.project_name }}
       function_app_name: ${{ steps.function_app.outputs.function_app_name }}
       function_app_url: ${{ steps.function_app.outputs.function_app_url }}
-
-  run-evaluation:
-    name: Run Agent Evaluation
-    needs: deploy-model-and-agent
-    if: ${{ inputs.run_evaluation == true && needs.deploy-model-and-agent.outputs.agent_id != '' }}
-    uses: ./.github/workflows/main.yml
-    with:
-      project_endpoint: ${{ needs.deploy-model-and-agent.outputs.project_endpoint }}
-      deployment_name: ${{ needs.deploy-model-and-agent.outputs.deployment_name }}
-      agent_id: ${{ needs.deploy-model-and-agent.outputs.agent_id }}
-      data_file: 'weather_test.json'
-      function_app_url: ${{ needs.deploy-model-and-agent.outputs.function_app_url }}
-    secrets:
-      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
-  blue-green-deployment:
-    name: Blue/Green Deployment with Approval
-    needs: [deploy-model-and-agent, run-evaluation]
-    if: ${{ inputs.run_blue_green == true && success() }}
-    uses: ./.github/workflows/blue-green-deployment-with-approval.yml
-    with:
-      environment: ${{ inputs.environment }}
-      project_endpoint: ${{ needs.deploy-model-and-agent.outputs.project_endpoint }}
-      deployment_name: ${{ needs.deploy-model-and-agent.outputs.deployment_name }}
-      agent_id: ${{ needs.deploy-model-and-agent.outputs.agent_id }}
-      evaluation_results: "Evaluation completed on ${{ github.run_id }}. Agent: ${{ needs.deploy-model-and-agent.outputs.agent_id }}. Model: ${{ needs.deploy-model-and-agent.outputs.deployment_name }}. Test data: weather_test.json. Check job artifacts for detailed results."
-      evaluation_passed: ${{ needs.run-evaluation.result == 'success' }}
-    secrets:
-      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      azure_openai_api_key: ${{ steps.openai_credentials.outputs.api_key }}
+      azure_openai_endpoint: ${{ steps.openai_credentials.outputs.azure_endpoint }}

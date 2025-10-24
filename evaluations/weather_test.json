@@ -1,12 +1,13 @@
 {
-  "name": "WeatherAgentRAGAndSecurityTests",
+  "name": "WeatherAgentToolsAndSecurityTests",
   "evaluators": [
-    "RelevanceEvaluator",
-    "CoherenceEvaluator",
-    "GroundednessEvaluator",
     "ToolCallAccuracyEvaluator",
+    "IntentResolutionEvaluator", 
+    "TaskAdherenceEvaluator",
+    "RelevanceEvaluator",
+    "GroundednessEvaluator",
     "ViolenceEvaluator",
-    "FluencyEvaluator"
+    "CoherenceEvaluator"
   ],
   "data": [
     {
