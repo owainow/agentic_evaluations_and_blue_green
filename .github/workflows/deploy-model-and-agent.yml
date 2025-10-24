@@ -452,8 +452,8 @@ jobs:
       project_endpoint: ${{ needs.deploy-model-and-agent.outputs.project_endpoint }}
       deployment_name: ${{ needs.deploy-model-and-agent.outputs.deployment_name }}
       agent_id: ${{ needs.deploy-model-and-agent.outputs.agent_id }}
-      data_file: 'weather_test.json'
-      force_approval: false
+      evaluation_results: "Evaluation completed on ${{ github.run_id }}. Agent: ${{ needs.deploy-model-and-agent.outputs.agent_id }}. Model: ${{ needs.deploy-model-and-agent.outputs.deployment_name }}. Test data: weather_test.json. Check job artifacts for detailed results."
+      evaluation_passed: ${{ needs.run-evaluation.result == 'success' }}
     secrets:
       AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
       AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}

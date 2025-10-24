@@ -27,17 +27,15 @@ on:
         required: true
         type: string
       
-      data_file:
-        description: 'Evaluation data file'
-        required: false
+      evaluation_results:
+        description: 'Evaluation results from previous workflow'
+        required: true
         type: string
-        default: 'weather_news_test.json'
       
-      force_approval:
-        description: 'Force manual approval even if tests pass'
-        required: false
+      evaluation_passed:
+        description: 'Whether evaluations passed'
+        required: true
         type: boolean
-        default: false
   
   workflow_call:
     inputs:
@@ -61,17 +59,15 @@ on:
         required: true
         type: string
       
-      data_file:
-        description: 'Evaluation data file'
-        required: false
+      evaluation_results:
+        description: 'Evaluation results from previous workflow'
+        required: true
         type: string
-        default: 'weather_news_test.json'
       
-      force_approval:
-        description: 'Force manual approval even if tests pass'
-        required: false
+      evaluation_passed:
+        description: 'Whether evaluations passed'
+        required: true
         type: boolean
-        default: false
     
     secrets:
       AZURE_CLIENT_ID:
@@ -89,223 +85,42 @@ env:
   AZURE_SUBSCRIPTION_ID: '269eee56-58bc-45eb-9dca-4d22421c45fa'
 
 jobs:
-  # Stage 1: Run evaluations and validation
-  evaluation-and-validation:
-    name: "🧪 Evaluation & Validation"
+  # Stage 1: Display evaluation results from previous workflow
+  evaluation-summary:
+    name: "📋 Evaluation Summary"
     runs-on: ubuntu-latest
     outputs:
-      evaluation-passed: ${{ steps.evaluation-results.outputs.passed }}
-      validation-passed: ${{ steps.validation-results.outputs.passed }}
-      overall-score: ${{ steps.evaluation-results.outputs.score }}
-      deployment-ready: ${{ steps.check-readiness.outputs.ready }}
+      deployment-ready: ${{ inputs.evaluation_passed }}
     
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Azure login
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.11'
-
-      - name: Install dependencies
+      - name: "� Display Evaluation Results"
         run: |
-          pip install requests azure-ai-projects==1.0.0 azure-ai-agents==1.1.0 azure-identity
-
-      # Run AI Foundry Evaluation
-      - name: "📊 Run AI Agent Evaluation"
-        id: ai-evaluation
-        uses: microsoft/ai-agent-evals@v2-beta
-        with:
-          azure-ai-project-endpoint: ${{ inputs.project_endpoint }}
-          deployment-name: ${{ inputs.deployment_name }}
-          agent-ids: ${{ inputs.agent_id }}
-          data-path: ${{ github.workspace }}/evaluations/${{ inputs.data_file }}
-        continue-on-error: true
-
-      # Run Custom JSON Validation
-      - name: "🔍 Run JSON Response Validation"
-        id: json-validation
-        env:
-          PROJECT_ENDPOINT: ${{ inputs.project_endpoint }}
-          AGENT_ID: ${{ inputs.agent_id }}
-          AGENT_NAME: 'Weather News Agent'
-        run: |
-          python scripts/validate_json_responses_azure_functions.py
-        continue-on-error: true
-
-      # Parse evaluation results
-      - name: "📈 Parse Evaluation Results"
-        id: evaluation-results
-        run: |
-          # This would parse the actual evaluation results
-          # For demo purposes, using simulated values
-          PASS_RATE=85
-          OVERALL_SCORE=4.2
-          
-          if [ $PASS_RATE -ge 80 ]; then
-            echo "passed=true" >> $GITHUB_OUTPUT
-          else
-            echo "passed=false" >> $GITHUB_OUTPUT
-          fi
-          
-          echo "score=$OVERALL_SCORE" >> $GITHUB_OUTPUT
-          echo "pass-rate=$PASS_RATE" >> $GITHUB_OUTPUT
-          
-          echo "## 📊 Evaluation Results" >> $GITHUB_STEP_SUMMARY
-          echo "- **Overall Score**: $OVERALL_SCORE/5.0" >> $GITHUB_STEP_SUMMARY
-          echo "- **Pass Rate**: $PASS_RATE%" >> $GITHUB_STEP_SUMMARY
-          echo "- **Status**: $([ $PASS_RATE -ge 80 ] && echo '✅ Passed' || echo '❌ Failed')" >> $GITHUB_STEP_SUMMARY
-
-      # Parse validation results
-      - name: "📋 Parse Validation Results"
-        id: validation-results
-        run: |
-          # Parse JSON validation results
-          if [ -f "json_validation_results_azure_functions.json" ]; then
-            # Extract metrics from JSON file (this would be actual parsing)
-            VALID_JSON_RATE=75
-            SUCCESSFUL_CALLS=100
-            
-            if [ $VALID_JSON_RATE -ge 70 ] && [ $SUCCESSFUL_CALLS -ge 90 ]; then
-              echo "passed=true" >> $GITHUB_OUTPUT
-            else
-              echo "passed=false" >> $GITHUB_OUTPUT
-            fi
-            
-            echo "valid-json-rate=$VALID_JSON_RATE" >> $GITHUB_OUTPUT
-            echo "successful-calls=$SUCCESSFUL_CALLS" >> $GITHUB_OUTPUT
-            
-            echo "## 🔍 Validation Results" >> $GITHUB_STEP_SUMMARY
-            echo "- **Valid JSON Rate**: $VALID_JSON_RATE%" >> $GITHUB_STEP_SUMMARY
-            echo "- **Successful Calls**: $SUCCESSFUL_CALLS%" >> $GITHUB_STEP_SUMMARY
-            echo "- **Status**: $([ $VALID_JSON_RATE -ge 70 ] && echo '✅ Passed' || echo '❌ Failed')" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "passed=false" >> $GITHUB_OUTPUT
-            echo "❌ Validation results file not found" >> $GITHUB_STEP_SUMMARY
-          fi
-
-      # Determine if deployment is ready
-      - name: "🚦 Check Deployment Readiness"
-        id: check-readiness
-        run: |
-          EVAL_PASSED="${{ steps.evaluation-results.outputs.passed }}"
-          VALIDATION_PASSED="${{ steps.validation-results.outputs.passed }}"
-          
-          if [ "$EVAL_PASSED" = "true" ] && [ "$VALIDATION_PASSED" = "true" ]; then
-            echo "ready=true" >> $GITHUB_OUTPUT
-            echo "## ✅ Deployment Ready" >> $GITHUB_STEP_SUMMARY
-            echo "All automated checks passed. Ready for deployment approval." >> $GITHUB_STEP_SUMMARY
-          else
-            echo "ready=false" >> $GITHUB_OUTPUT
-            echo "## ❌ Deployment Not Ready" >> $GITHUB_STEP_SUMMARY
-            echo "Some automated checks failed. Manual review required." >> $GITHUB_STEP_SUMMARY
-          fi
-
-      # Upload artifacts
-      - name: Upload evaluation artifacts
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: evaluation-results-${{ github.run_number }}
-          path: |
-            json_validation_results_azure_functions.json
-            *.log
-          retention-days: 30
-
-  # Stage 2: Human approval with context
-  human-approval:
-    name: "👤 Human Approval Required"
-    runs-on: ubuntu-latest
-    needs: evaluation-and-validation
-    if: always()
-    
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      
-      - name: "📝 Create Approval Summary"
-        run: |
-          cat > approval-summary.md << EOF
-          # 🚀 Deployment Approval Request
-          
-          ## Environment: \`${{ inputs.environment }}\`
-          
-          **Agent ID**: \`${{ inputs.agent_id }}\`  
-          **Deployment**: \`${{ inputs.deployment_name }}\`  
-          **Workflow Run**: [#${{ github.run_number }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
-          
-          ## 📊 Automated Test Results
-          
-          ### AI Foundry Evaluation
-          - **Status**: ${{ needs.evaluation-and-validation.outputs.evaluation-passed == 'true' && '✅ Passed' || '❌ Failed' }}
-          - **Overall Score**: ${{ needs.evaluation-and-validation.outputs.overall-score }}/5.0
-          
-          ### JSON Response Validation
-          - **Status**: ${{ needs.evaluation-and-validation.outputs.validation-passed == 'true' && '✅ Passed' || '❌ Failed' }}
-          
-          ### Deployment Readiness
-          - **Ready**: ${{ needs.evaluation-and-validation.outputs.deployment-ready == 'true' && '✅ Yes' || '❌ No' }}
-          
-          ## 🎯 What happens next?
-          
-          ${{ needs.evaluation-and-validation.outputs.deployment-ready == 'true' && '**All automated checks passed!** 🎉' || '**Some checks failed.** ⚠️ Please review carefully.' }}
-          
-          If you approve this deployment:
-          1. **Blue Environment**: Current production will be preserved
-          2. **Green Environment**: New agent will be deployed alongside
-          3. **Traffic Split**: You can control traffic routing
-          4. **Rollback**: Quick rollback available if issues arise
-          
-          ## 🛡️ Safety Features
-          - Blue/Green deployment strategy
-          - Instant rollback capability
-          - Traffic splitting for gradual rollout
-          - Production monitoring enabled
-          
-          ---
-          
-          **⚠️ Please review all test results before approving this deployment.**
-          **To approve: Create a comment on this workflow run with "APPROVED"**
-          **To reject: Create a comment with "REJECTED"**
-          EOF
-          
-          echo "## 👤 Human Approval Required" >> $GITHUB_STEP_SUMMARY
-          cat approval-summary.md >> $GITHUB_STEP_SUMMARY
-
-      - name: "⏳ Manual Approval Check"
-        id: approval-check
-        run: |
-          echo "## ⏳ Waiting for Manual Approval" >> $GITHUB_STEP_SUMMARY
+          echo "## 📊 Evaluation Results from Previous Workflow" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Instructions for Approval:**" >> $GITHUB_STEP_SUMMARY
-          echo "1. Review the test results above" >> $GITHUB_STEP_SUMMARY
-          echo "2. Check the agent performance metrics" >> $GITHUB_STEP_SUMMARY
-          echo "3. Consider the deployment timing and risk" >> $GITHUB_STEP_SUMMARY
-          echo "4. If approved, manually trigger the next job" >> $GITHUB_STEP_SUMMARY
+          echo "**Agent ID**: \`${{ inputs.agent_id }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Deployment**: \`${{ inputs.deployment_name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment**: \`${{ inputs.environment }}\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Next Step**: If you approve this deployment, manually run the 'Blue/Green Deployment' job" >> $GITHUB_STEP_SUMMARY
-          echo "**Artifacts**: Download evaluation results to review in detail" >> $GITHUB_STEP_SUMMARY
+          echo "**Evaluation Status**: ${{ inputs.evaluation_passed == true && '✅ Passed' || '❌ Failed' }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Detailed Results:" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "${{ inputs.evaluation_results }}" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
           
-          # Set output for potential automation
-          if [ "${{ needs.evaluation-and-validation.outputs.deployment-ready }}" = "true" ] && [ "${{ inputs.force_approval }}" = "false" ]; then
-            echo "auto-approved=true" >> $GITHUB_OUTPUT
+          if [ "${{ inputs.evaluation_passed }}" = "true" ]; then
+            echo "✅ **Ready for human approval and deployment**" >> $GITHUB_STEP_SUMMARY
           else
-            echo "auto-approved=false" >> $GITHUB_OUTPUT
+            echo "❌ **Evaluations failed - deployment should be reviewed carefully**" >> $GITHUB_STEP_SUMMARY
           fi
 
-  # Stage 3: Blue/Green deployment simulation
+  # Blue/Green deployment with GitHub Environment protection
   blue-green-deployment:
     name: "🔄 Blue/Green Deployment"
     runs-on: ubuntu-latest
-    needs: [evaluation-and-validation, human-approval]
+    environment: production  # This triggers the manual approval!
+    needs: [evaluation-summary]
     if: success()
     
     steps:
@@ -318,6 +133,18 @@ jobs:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: "📋 Pre-Deployment Summary"
+        run: |
+          echo "## 🚀 Deployment Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Environment**: \`${{ inputs.environment }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Agent ID**: \`${{ inputs.agent_id }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Deployment**: \`${{ inputs.deployment_name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Evaluation Status**: ${{ inputs.evaluation_passed == true && '✅ Passed' || '❌ Failed' }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Human Approval**: ✅ Approved via GitHub Environment Protection" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
 
       # Simulate Blue/Green deployment steps
       - name: "🔵 Preserve Blue Environment"
