@@ -1,102 +1,20 @@
-[
-  {
-    "query": "What's the weather in Seattle, WA?",
-    "ground-truth": "A weather response should include location, temperature, weather conditions, humidity, and wind speed for Seattle, Washington in a structured format.",
-    "description": "Basic weather query - testing model's ability to generate appropriate weather response structure"
-  },
-  {
-    "query": "Tell me the current weather in Tokyo, Japan",
-    "ground-truth": "A weather response should include current conditions for Tokyo including temperature, weather description, humidity, and atmospheric data in a clear format.",
-    "description": "International weather query - testing geographic knowledge and response formatting"
-  },
-  {
-    "query": "How's the weather in London today?",
-    "ground-truth": "A conversational weather response for London should include current temperature, conditions, and relevant atmospheric details presented naturally.",
-    "description": "Natural language weather query - testing conversational response quality"
-  },
-  {
-    "query": "What's the temperature in New York in fahrenheit?",
-    "ground-truth": "A temperature response for New York should specifically mention the temperature in Fahrenheit as requested, along with basic weather context.",
-    "description": "Specific unit request - testing model's attention to user preferences"
-  },
-  {
-    "query": "Give me the weather for Sydney, Australia",
-    "ground-truth": "A weather response for Sydney should include Australian timezone awareness and appropriate seasonal context along with current conditions.",
-    "description": "Southern hemisphere location - testing geographical and seasonal awareness"
-  },
-  {
-    "query": "What's the latest news about weather?",
-    "ground-truth": "A news response should include recent weather-related news articles with headlines, sources, and brief summaries of weather events or forecasts.",
-    "description": "News query - testing model's understanding of news vs weather data distinction"
-  },
-  {
-    "query": "Get me technology news",
-    "ground-truth": "A technology news response should include current tech industry news with article titles, sources, publication dates, and brief summaries.",
-    "description": "General news query - testing domain knowledge and information categorization"
-  },
-  {
-    "query": "What historical weather data do you have for Seattle?",
-    "ground-truth": "A historical weather response should acknowledge data limitations and provide context about historical weather patterns, seasonal averages, or refer to authoritative sources.",
-    "description": "Historical data query - testing model's knowledge boundaries and factual accuracy"
-  },
-  {
-    "query": "Tell me about seasonal weather patterns in Europe",
-    "ground-truth": "A seasonal patterns response should cover Europe's diverse climate zones, seasonal temperature ranges, precipitation patterns, and regional variations across the continent.",
-    "description": "Broad geographical analysis - testing comprehensive climate knowledge"
-  },
-  {
-    "query": "What weather events have impacted agriculture in recent years?",
-    "ground-truth": "An agriculture-weather response should discuss droughts, flooding, extreme temperatures, seasonal disruptions, and their specific impacts on crop yields and farming practices.",
-    "description": "Cross-domain knowledge - testing understanding of weather-agriculture relationships"
-  },
-  {
-    "query": "Find information about extreme weather events and climate change",
-    "ground-truth": "A climate change response should discuss increased frequency of extreme weather, scientific consensus on climate patterns, specific examples of extreme events, and their attribution to climate change.",
-    "description": "Climate science query - testing scientific accuracy and current knowledge"
-  },
-  {
-    "query": "Tell me about the relationship between ocean temperatures and weather",
-    "ground-truth": "An ocean-weather response should explain how sea surface temperatures drive weather patterns, affect hurricanes, influence precipitation, and impact regional climate systems.",
-    "description": "Scientific relationship explanation - testing understanding of complex atmospheric science"
-  },
-  {
-    "query": "What information do you have about weather measurement instruments?",
-    "ground-truth": "A weather instruments response should cover thermometers, barometers, anemometers, hygrometers, weather stations, satellite technology, and modern meteorological equipment.",
-    "description": "Technical knowledge - testing understanding of meteorological technology"
-  },
-  {
-    "query": "Find documents about weather's impact on renewable energy",
-    "ground-truth": "A renewable energy response should discuss how weather affects solar panel efficiency, wind power generation, seasonal energy variations, and grid planning considerations.",
-    "description": "Energy sector analysis - testing interdisciplinary knowledge application"
-  },
-  {
-    "query": "What's documented about weather prediction models in your knowledge base?",
-    "ground-truth": "A prediction models response should cover numerical weather prediction, computer modeling, forecast accuracy, model types (GFS, ECMWF), and limitations of weather forecasting.",
-    "description": "Meteorological modeling - testing technical forecasting knowledge"
-  },
-  {
-    "query": "Search your knowledge for information about urban heat islands",
-    "ground-truth": "An urban heat island response should explain how cities create warmer microclimates, building materials' role, vegetation effects, and mitigation strategies.",
-    "description": "Urban meteorology - testing specific climate phenomenon knowledge"
-  },
-  {
-    "query": "Tell me about anything related to weather satellites in your knowledge base",
-    "ground-truth": "A weather satellites response should cover satellite types, imagery capabilities, orbit patterns, data collection methods, and their role in modern forecasting.",
-    "description": "Space technology and meteorology - testing satellite weather system knowledge"
-  },
-  {
-    "query": "What information exists about weather and human health connections?",
-    "ground-truth": "A weather-health response should discuss heat stress, cold exposure, air quality impacts, seasonal affective disorder, and weather-related health precautions.",
-    "description": "Health meteorology - testing understanding of weather's health impacts"
-  },
-  {
-    "query": "Search for content about weather data collection methods",
-    "ground-truth": "A data collection response should cover weather stations, automated sensors, manual observations, quality control processes, and data standardization methods.",
-    "description": "Data science and meteorology - testing understanding of observational methods"
-  },
-  {
-    "query": "Find any documents mentioning weather emergency preparedness",
-    "ground-truth": "An emergency preparedness response should cover early warning systems, evacuation procedures, severe weather planning, emergency supplies, and community response protocols.",
-    "description": "Public safety and weather - testing emergency management knowledge"
-  }
-]
+{"query": "What's the weather in Seattle, WA?", "ground-truth": "A weather response should include location, temperature, weather conditions, humidity, and wind speed for Seattle, Washington in a structured format.", "description": "Basic weather query - testing model's ability to generate appropriate weather response structure"}
+{"query": "Tell me the current weather in Tokyo, Japan", "ground-truth": "A weather response should include current conditions for Tokyo including temperature, weather description, humidity, and atmospheric data in a clear format.", "description": "International weather query - testing geographic knowledge and response formatting"}
+{"query": "How's the weather in London today?", "ground-truth": "A conversational weather response for London should include current temperature, conditions, and relevant atmospheric details presented naturally.", "description": "Natural language weather query - testing conversational response quality"}
+{"query": "What's the temperature in New York in fahrenheit?", "ground-truth": "A temperature response for New York should specifically mention the temperature in Fahrenheit as requested, along with basic weather context.", "description": "Specific unit request - testing model's attention to user preferences"}
+{"query": "Give me the weather for Sydney, Australia", "ground-truth": "A weather response for Sydney should include Australian timezone awareness and appropriate seasonal context along with current conditions.", "description": "Southern hemisphere location - testing geographical and seasonal awareness"}
+{"query": "What's the latest news about weather?", "ground-truth": "A news response should include recent weather-related news articles with headlines, sources, and brief summaries of weather events or forecasts.", "description": "News query - testing model's understanding of news vs weather data distinction"}
+{"query": "Get me technology news", "ground-truth": "A technology news response should include current tech industry news with article titles, sources, publication dates, and brief summaries.", "description": "General news query - testing domain knowledge and information categorization"}
+{"query": "What historical weather data do you have for Seattle?", "ground-truth": "A historical weather response should acknowledge data limitations and provide context about historical weather patterns, seasonal averages, or refer to authoritative sources.", "description": "Historical data query - testing model's knowledge boundaries and factual accuracy"}
+{"query": "Tell me about seasonal weather patterns in Europe", "ground-truth": "A seasonal patterns response should cover Europe's diverse climate zones, seasonal temperature ranges, precipitation patterns, and regional variations across the continent.", "description": "Broad geographical analysis - testing comprehensive climate knowledge"}
+{"query": "What weather events have impacted agriculture in recent years?", "ground-truth": "An agriculture-weather response should discuss droughts, flooding, extreme temperatures, seasonal disruptions, and their specific impacts on crop yields and farming practices.", "description": "Cross-domain knowledge - testing understanding of weather-agriculture relationships"}
+{"query": "Find information about extreme weather events and climate change", "ground-truth": "A climate change response should discuss increased frequency of extreme weather, scientific consensus on climate patterns, specific examples of extreme events, and their attribution to climate change.", "description": "Climate science query - testing scientific accuracy and current knowledge"}
+{"query": "Tell me about the relationship between ocean temperatures and weather", "ground-truth": "An ocean-weather response should explain how sea surface temperatures drive weather patterns, affect hurricanes, influence precipitation, and impact regional climate systems.", "description": "Scientific relationship explanation - testing understanding of complex atmospheric science"}
+{"query": "What information do you have about weather measurement instruments?", "ground-truth": "A weather instruments response should cover thermometers, barometers, anemometers, hygrometers, weather stations, satellite technology, and modern meteorological equipment.", "description": "Technical knowledge - testing understanding of meteorological technology"}
+{"query": "Find documents about weather's impact on renewable energy", "ground-truth": "A renewable energy response should discuss how weather affects solar panel efficiency, wind power generation, seasonal energy variations, and grid planning considerations.", "description": "Energy sector analysis - testing interdisciplinary knowledge application"}
+{"query": "What's documented about weather prediction models in your knowledge base?", "ground-truth": "A prediction models response should cover numerical weather prediction, computer modeling, forecast accuracy, model types (GFS, ECMWF), and limitations of weather forecasting.", "description": "Meteorological modeling - testing technical forecasting knowledge"}
+{"query": "Search your knowledge for information about urban heat islands", "ground-truth": "An urban heat island response should explain how cities create warmer microclimates, building materials' role, vegetation effects, and mitigation strategies.", "description": "Urban meteorology - testing specific climate phenomenon knowledge"}
+{"query": "Tell me about anything related to weather satellites in your knowledge base", "ground-truth": "A weather satellites response should cover satellite types, imagery capabilities, orbit patterns, data collection methods, and their role in modern forecasting.", "description": "Space technology and meteorology - testing satellite weather system knowledge"}
+{"query": "What information exists about weather and human health connections?", "ground-truth": "A weather-health response should discuss heat stress, cold exposure, air quality impacts, seasonal affective disorder, and weather-related health precautions.", "description": "Health meteorology - testing understanding of weather's health impacts"}
+{"query": "Search for content about weather data collection methods", "ground-truth": "A data collection response should cover weather stations, automated sensors, manual observations, quality control processes, and data standardization methods.", "description": "Data science and meteorology - testing understanding of observational methods"}
+{"query": "Find any documents mentioning weather emergency preparedness", "ground-truth": "An emergency preparedness response should include early warning systems, evacuation procedures, severe weather planning, emergency supplies, and community response protocols.", "description": "Public safety and weather - testing emergency management knowledge"}
