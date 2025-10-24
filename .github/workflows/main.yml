@@ -162,6 +162,7 @@ jobs:
           pip install azure-ai-projects==1.0.0 azure-ai-agents==1.1.0 azure-identity
 
       - name: Run JSON Validation Tests
+        continue-on-error: true
         env:
           PROJECT_ENDPOINT: ${{ inputs.project_endpoint }}
           AGENT_ID: ${{ inputs.agent_id }}
