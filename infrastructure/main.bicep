@@ -463,3 +463,7 @@ output searchServiceName string = searchService.name
 output searchServiceUrl string = 'https://${searchService.name}.search.windows.net'
 output searchServiceId string = searchService.id
 output searchServicePrincipalId string = searchService.identity.principalId
+
+// Resource Group output (for knowledge base setup)
+output resourceGroupName string = resourceGroup().name
+output location string = location

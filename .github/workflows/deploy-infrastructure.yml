@@ -410,3 +410,167 @@ jobs:
           name: deployment-info-${{ inputs.environment }}
           path: deployment-info.txt
           retention-days: 90
+
+  setup-knowledge-base:
+    name: Setup Knowledge Base
+    runs-on: ubuntu-latest
+    needs: [deploy, deploy-functions]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Azure Login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Get Deployment Outputs
+        id: get-outputs
+        run: |
+          echo "🔍 Getting deployment outputs..."
+          
+          # Get the latest deployment name
+          DEPLOYMENT_NAME=$(az deployment group list \
+            --resource-group ${{ needs.deploy.outputs.resource_group }} \
+            --query "[?starts_with(name, 'aifoundry-')] | sort_by(@, &properties.timestamp) | [-1].name" \
+            --output tsv)
+          
+          echo "Latest deployment: $DEPLOYMENT_NAME"
+          
+          # Get deployment outputs
+          OUTPUTS=$(az deployment group show \
+            --name $DEPLOYMENT_NAME \
+            --resource-group ${{ needs.deploy.outputs.resource_group }} \
+            --query properties.outputs)
+          
+          echo "$OUTPUTS" | jq .
+          
+          # Save outputs to file
+          echo "$OUTPUTS" > deployment-outputs.json
+          
+          # Extract specific values for environment variables
+          SEARCH_SERVICE_NAME=$(echo $OUTPUTS | jq -r '.searchServiceName.value // empty')
+          STORAGE_ACCOUNT_NAME=$(echo $OUTPUTS | jq -r '.storageAccountName.value // empty') 
+          AI_FOUNDRY_NAME=$(echo $OUTPUTS | jq -r '.aiFoundryName.value // empty')
+          
+          echo "search_service_name=$SEARCH_SERVICE_NAME" >> $GITHUB_OUTPUT
+          echo "storage_account_name=$STORAGE_ACCOUNT_NAME" >> $GITHUB_OUTPUT
+          echo "ai_foundry_name=$AI_FOUNDRY_NAME" >> $GITHUB_OUTPUT
+
+      - name: Assign Required Permissions
+        run: |
+          echo "🔐 Assigning required permissions for knowledge base setup..."
+          
+          # Get the service principal object ID
+          SP_OBJECT_ID=$(az ad sp show --id ${{ secrets.AZURE_CLIENT_ID }} --query id --output tsv)
+          
+          # Assign Search Index Data Contributor role
+          echo "Assigning Search Index Data Contributor role..."
+          az role assignment create \
+            --assignee-object-id $SP_OBJECT_ID \
+            --assignee-principal-type ServicePrincipal \
+            --role "Search Index Data Contributor" \
+            --scope "/subscriptions/${{ secrets.AZURE_SUBSCRIPTION_ID }}/resourceGroups/${{ needs.deploy.outputs.resource_group }}/providers/Microsoft.Search/searchServices/${{ steps.get-outputs.outputs.search_service_name }}" \
+            --output none || echo "Role already assigned or assignment failed"
+          
+          # Assign Search Service Contributor role
+          echo "Assigning Search Service Contributor role..."
+          az role assignment create \
+            --assignee-object-id $SP_OBJECT_ID \
+            --assignee-principal-type ServicePrincipal \
+            --role "Search Service Contributor" \
+            --scope "/subscriptions/${{ secrets.AZURE_SUBSCRIPTION_ID }}/resourceGroups/${{ needs.deploy.outputs.resource_group }}/providers/Microsoft.Search/searchServices/${{ steps.get-outputs.outputs.search_service_name }}" \
+            --output none || echo "Role already assigned or assignment failed"
+          
+          # Assign Storage Blob Data Contributor role
+          echo "Assigning Storage Blob Data Contributor role..."
+          az role assignment create \
+            --assignee-object-id $SP_OBJECT_ID \
+            --assignee-principal-type ServicePrincipal \
+            --role "Storage Blob Data Contributor" \
+            --scope "/subscriptions/${{ secrets.AZURE_SUBSCRIPTION_ID }}/resourceGroups/${{ needs.deploy.outputs.resource_group }}/providers/Microsoft.Storage/storageAccounts/${{ steps.get-outputs.outputs.storage_account_name }}" \
+            --output none || echo "Role already assigned or assignment failed"
+          
+          # Assign Cognitive Services OpenAI User role
+          echo "Assigning Cognitive Services OpenAI User role..."
+          az role assignment create \
+            --assignee-object-id $SP_OBJECT_ID \
+            --assignee-principal-type ServicePrincipal \
+            --role "Cognitive Services OpenAI User" \
+            --scope "/subscriptions/${{ secrets.AZURE_SUBSCRIPTION_ID }}/resourceGroups/${{ needs.deploy.outputs.resource_group }}/providers/Microsoft.CognitiveServices/accounts/${{ steps.get-outputs.outputs.ai_foundry_name }}" \
+            --output none || echo "Role already assigned or assignment failed"
+          
+          echo "✅ Permission assignment completed"
+
+      - name: Setup Knowledge Base
+        env:
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          DEPLOYMENT_OUTPUTS_FILE: deployment-outputs.json
+        run: |
+          echo "📚 Setting up Azure AI Search knowledge base..."
+          echo "This will:"
+          echo "  1. Generate weather and news PDF data"
+          echo "  2. Upload PDFs to blob storage"
+          echo "  3. Create Azure AI Search index with integrated vectorization"
+          echo "  4. Set up automated indexing pipeline"
+          echo ""
+          
+          # Run the knowledge base setup
+          python scripts/setup_knowledge_base.py
+
+      - name: Upload Knowledge Base Summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: knowledge-base-summary-${{ inputs.environment }}
+          path: knowledge-base-setup-summary.md
+          retention-days: 90
+
+      - name: Update Summary with Knowledge Base Info
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 📚 Knowledge Base Setup" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -f "knowledge-base-setup-summary.md" ]; then
+            # Check if setup was successful
+            if grep -q "Setup Completed Successfully" knowledge-base-setup-summary.md; then
+              echo "✅ **Knowledge Base Setup: SUCCESSFUL**" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "Your Azure AI Search service is now populated with:" >> $GITHUB_STEP_SUMMARY
+              echo "- Historical weather data across multiple cities" >> $GITHUB_STEP_SUMMARY
+              echo "- Climate and weather-related news articles" >> $GITHUB_STEP_SUMMARY
+              echo "- Integrated vectorization pipeline for automatic processing" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "### 🔍 Search Service Details" >> $GITHUB_STEP_SUMMARY
+              echo "- **Service Name**: \`${{ steps.get-outputs.outputs.search_service_name }}\`" >> $GITHUB_STEP_SUMMARY
+              echo "- **Index Name**: \`knowledge-vector-index\`" >> $GITHUB_STEP_SUMMARY
+              echo "- **Endpoint**: \`https://${{ steps.get-outputs.outputs.search_service_name }}.search.windows.net\`" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "### 🎯 Ready for Agent Integration" >> $GITHUB_STEP_SUMMARY
+              echo "Your agent can now use this knowledge base for RAG (Retrieval-Augmented Generation):" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo '```python' >> $GITHUB_STEP_SUMMARY
+              echo 'from azure.search.documents import SearchClient' >> $GITHUB_STEP_SUMMARY
+              echo 'from azure.identity import DefaultAzureCredential' >> $GITHUB_STEP_SUMMARY
+              echo '' >> $GITHUB_STEP_SUMMARY
+              echo 'search_client = SearchClient(' >> $GITHUB_STEP_SUMMARY
+              echo "    endpoint=\"https://${{ steps.get-outputs.outputs.search_service_name }}.search.windows.net\"," >> $GITHUB_STEP_SUMMARY
+              echo '    index_name="knowledge-vector-index",' >> $GITHUB_STEP_SUMMARY
+              echo '    credential=DefaultAzureCredential()' >> $GITHUB_STEP_SUMMARY
+              echo ')' >> $GITHUB_STEP_SUMMARY
+              echo '```' >> $GITHUB_STEP_SUMMARY
+            else
+              echo "❌ **Knowledge Base Setup: FAILED**" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "The knowledge base setup encountered errors. Check the logs and the uploaded summary for details." >> $GITHUB_STEP_SUMMARY
+            fi
+          else
+            echo "❌ **Knowledge Base Setup: NO SUMMARY GENERATED**" >> $GITHUB_STEP_SUMMARY
+          fi
