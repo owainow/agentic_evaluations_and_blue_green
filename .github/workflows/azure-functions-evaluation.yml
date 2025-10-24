@@ -92,7 +92,8 @@ jobs:
             --resource-group ${{ inputs.resource_group }} \
             --template-file infrastructure/main.bicep \
             --parameters @infrastructure/main-flex.parameters.json \
-            --parameters functionAppName=${{ inputs.function_app_name }}
+            --parameters functionAppName=${{ inputs.function_app_name }} \
+                        createRoleAssignments=false
           
           # Get Function App URL
           FUNCTION_URL=$(az functionapp show \

@@ -161,6 +161,7 @@ jobs:
             --parameters baseName="${{ inputs.base_name }}" \
                         environment=${{ inputs.environment }} \
                         location=${{ inputs.location }} \
+                        createRoleAssignments=false \
             --result-format FullResourcePayloads
 
       - name: Deploy Infrastructure
@@ -181,7 +182,8 @@ jobs:
             --template-file infrastructure/main.bicep \
             --parameters baseName="${{ inputs.base_name }}" \
                         environment=${{ inputs.environment }} \
-                        location=${{ inputs.location }}
+                        location=${{ inputs.location }} \
+                        createRoleAssignments=false
           
           echo ""
           echo "✅ Deployment completed successfully!"
@@ -208,6 +210,77 @@ jobs:
           echo "endpoint=$PROJECT_ENDPOINT" >> $GITHUB_OUTPUT
           echo "function_app_name=$FUNCTION_APP_NAME" >> $GITHUB_OUTPUT
           echo "function_app_url=$FUNCTION_APP_URL" >> $GITHUB_OUTPUT
+
+      - name: Configure Role Assignments
+        run: |
+          echo "🔑 Configuring role assignments..."
+          
+          # Get the latest deployment name
+          LATEST_DEPLOYMENT=$(az deployment group list \
+            --resource-group ${{ inputs.resource_group_name }} \
+            --query "[?starts_with(name, 'aifoundry-')] | sort_by(@, &properties.timestamp) | [-1].name" \
+            --output tsv)
+          
+          echo "Using deployment: $LATEST_DEPLOYMENT"
+          
+          # Get deployment outputs for principal IDs
+          OUTPUTS=$(az deployment group show \
+            --name $LATEST_DEPLOYMENT \
+            --resource-group ${{ inputs.resource_group_name }} \
+            --query properties.outputs)
+          
+          USER_IDENTITY_PRINCIPAL_ID=$(echo $OUTPUTS | jq -r '.userAssignedIdentityPrincipalId.value // empty')
+          SEARCH_SERVICE_PRINCIPAL_ID=$(echo $OUTPUTS | jq -r '.searchServicePrincipalId.value // empty')
+          AI_PROJECT_PRINCIPAL_ID=$(echo $OUTPUTS | jq -r '.aiProjectPrincipalId.value // empty')
+          STORAGE_ACCOUNT_ID=$(echo $OUTPUTS | jq -r '.storageAccountId.value // empty')
+          SEARCH_SERVICE_ID=$(echo $OUTPUTS | jq -r '.searchServiceId.value // empty')
+          AI_FOUNDRY_ID=$(echo $OUTPUTS | jq -r '.aiFoundryId.value // empty')
+          APP_INSIGHTS_ID=$(echo $OUTPUTS | jq -r '.applicationInsightsId.value // empty')
+          
+          echo "Principal IDs retrieved:"
+          echo "  User Identity: $USER_IDENTITY_PRINCIPAL_ID"
+          echo "  Search Service: $SEARCH_SERVICE_PRINCIPAL_ID"
+          echo "  AI Project: $AI_PROJECT_PRINCIPAL_ID"
+          
+          # Function to create role assignment with retry logic
+          create_role_assignment() {
+            local assignee=$1
+            local role=$2
+            local scope=$3
+            local description=$4
+            
+            echo "Creating role assignment: $description"
+            
+            # Check if assignment already exists
+            existing=$(az role assignment list \
+              --assignee $assignee \
+              --role "$role" \
+              --scope $scope \
+              --query '[].id' \
+              --output tsv 2>/dev/null || echo "")
+            
+            if [ -n "$existing" ]; then
+              echo "✅ Role assignment already exists: $description"
+            else
+              echo "Creating new role assignment: $description"
+              az role assignment create \
+                --assignee $assignee \
+                --role "$role" \
+                --scope $scope \
+                --description "$description" || echo "⚠️ Failed to create: $description"
+            fi
+          }
+          
+          # Only create assignments if principal IDs are available
+          if [ -n "$SEARCH_SERVICE_PRINCIPAL_ID" ] && [ -n "$STORAGE_ACCOUNT_ID" ]; then
+            create_role_assignment \
+              "$SEARCH_SERVICE_PRINCIPAL_ID" \
+              "Storage Blob Data Reader" \
+              "$STORAGE_ACCOUNT_ID" \
+              "Azure AI Search service read access to storage blobs for indexing"
+          fi
+          
+          echo "✅ Role assignment configuration completed"
 
       - name: Verify Deployment
         run: |

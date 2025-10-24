@@ -454,6 +454,7 @@ output aiFoundryId string = aiFoundry.id
 output aiFoundryEndpoint string = aiFoundry.properties.endpoint
 output projectName string = aiProject.name
 output projectId string = aiProject.id
+output aiProjectPrincipalId string = aiProject.identity.principalId
 
 // This is the endpoint format needed for the Agent Service SDK
 output projectEndpoint string = 'https://${aiFoundry.name}.services.ai.azure.com/api/projects/${aiProject.name}'
@@ -464,8 +465,11 @@ output functionAppUrl string = 'https://${functionApp.properties.defaultHostName
 output functionAppPrincipalId string = userAssignedIdentity.properties.principalId
 output userAssignedIdentityId string = userAssignedIdentity.id
 output userAssignedIdentityClientId string = userAssignedIdentity.properties.clientId
+output userAssignedIdentityPrincipalId string = userAssignedIdentity.properties.principalId
 output storageAccountName string = storageAccount.name
+output storageAccountId string = storageAccount.id
 output applicationInsightsName string = applicationInsights.name
+output applicationInsightsId string = applicationInsights.id
 output applicationInsightsConnectionString string = applicationInsights.properties.ConnectionString
 output applicationInsightsInstrumentationKey string = applicationInsights.properties.InstrumentationKey
 output logAnalyticsWorkspaceName string = logAnalyticsWorkspace.name
