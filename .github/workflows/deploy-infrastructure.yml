@@ -327,6 +327,12 @@ jobs:
           echo "FUNCTION_APP_URL=${{ needs.deploy.outputs.function_app_url }}" >> deployment-info.txt
           echo "RESOURCE_GROUP=${{ needs.deploy.outputs.resource_group }}" >> deployment-info.txt
           echo "ENVIRONMENT=${{ inputs.environment }}" >> deployment-info.txt
+          echo "" >> deployment-info.txt
+          echo "# Required permission command for GitHub Actions agent deployment:" >> deployment-info.txt
+          echo "az role assignment create \\" >> deployment-info.txt
+          echo "  --assignee ${{ secrets.AZURE_CLIENT_ID }} \\" >> deployment-info.txt
+          echo "  --role \"Azure AI Developer\" \\" >> deployment-info.txt
+          echo "  --scope \"/subscriptions/${{ secrets.AZURE_SUBSCRIPTION_ID }}/resourceGroups/${{ needs.deploy.outputs.resource_group }}/providers/Microsoft.CognitiveServices/accounts/${{ needs.deploy.outputs.ai_foundry_name }}\"" >> deployment-info.txt
           
           cat deployment-info.txt
 
@@ -355,10 +361,22 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "## 🚀 Next Steps" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "1. Visit [Azure AI Foundry](https://ai.azure.com)" >> $GITHUB_STEP_SUMMARY
-          echo "2. Select project: **${{ needs.deploy.outputs.project_name }}**" >> $GITHUB_STEP_SUMMARY
-          echo "3. Deploy a model (e.g., gpt-4o)" >> $GITHUB_STEP_SUMMARY
-          echo "4. Create agents using the deployed functions!" >> $GITHUB_STEP_SUMMARY
+          echo "1. **Assign Agent Permissions** (Required for GitHub Actions):" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo '```bash' >> $GITHUB_STEP_SUMMARY
+          echo "# Grant your GitHub Actions service principal the 'Azure AI Developer' role" >> $GITHUB_STEP_SUMMARY
+          echo "az role assignment create \\" >> $GITHUB_STEP_SUMMARY
+          echo "  --assignee ${{ secrets.AZURE_CLIENT_ID }} \\" >> $GITHUB_STEP_SUMMARY
+          echo "  --role \"Azure AI Developer\" \\" >> $GITHUB_STEP_SUMMARY
+          echo "  --scope \"/subscriptions/${{ secrets.AZURE_SUBSCRIPTION_ID }}/resourceGroups/${{ needs.deploy.outputs.resource_group }}/providers/Microsoft.CognitiveServices/accounts/${{ needs.deploy.outputs.ai_foundry_name }}\"" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "📖 **Detailed Guide**: [Agent Permissions Setup](docs/AGENT_PERMISSIONS_SETUP.md)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "2. Visit [Azure AI Foundry](https://ai.azure.com)" >> $GITHUB_STEP_SUMMARY
+          echo "3. Select project: **${{ needs.deploy.outputs.project_name }}**" >> $GITHUB_STEP_SUMMARY
+          echo "4. Deploy a model (e.g., gpt-4o)" >> $GITHUB_STEP_SUMMARY
+          echo "5. Create agents using the deployed functions!" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "## ⚡ Deployed Functions" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY

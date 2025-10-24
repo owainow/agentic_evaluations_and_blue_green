@@ -84,8 +84,6 @@ on:
 permissions:
   id-token: write
   contents: read
-  issues: write
-  pull-requests: write
 
 env:
   AZURE_SUBSCRIPTION_ID: '269eee56-58bc-45eb-9dca-4d22421c45fa'

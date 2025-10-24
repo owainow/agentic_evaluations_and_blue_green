@@ -22,6 +22,31 @@ cd infrastructure
 ✅ **Capability Hosts** for agent support (account + project level)  
 ✅ **Optional Standard Setup** with dedicated Storage, Cosmos DB, and AI Search  
 
+### 🔑 **Required: Agent Permissions Setup**
+
+⚠️ **After infrastructure deployment, you must assign agent permissions for GitHub Actions to work:**
+
+The infrastructure workflow outputs the exact command you need to run. After deployment completes:
+
+1. **Check the workflow summary** or download the `deployment-info` artifact
+2. **Run the provided permission command**, which looks like:
+
+```bash
+az role assignment create \
+  --assignee YOUR_GITHUB_ACTIONS_CLIENT_ID \
+  --role "Azure AI Developer" \
+  --scope "/subscriptions/YOUR_SUBSCRIPTION/resourceGroups/YOUR_RG/providers/Microsoft.CognitiveServices/accounts/YOUR_AI_FOUNDRY_NAME"
+```
+
+3. **Replace the placeholders** with your actual values (provided in the workflow output)
+
+**Why this is needed:** The GitHub Actions service principal needs the `Azure AI Developer` role on the AI Foundry resource to create and manage agents programmatically.
+
+**Alternative:** You can also assign this role through the Azure Portal:
+- Go to your AI Foundry resource → Access control (IAM)
+- Add role assignment → Azure AI Developer
+- Assign to your GitHub Actions service principal
+
 ### Templates Available
 
 - **`infrastructure/main.bicep`** - Basic setup (managed storage, quick start)
@@ -197,3 +222,83 @@ Both flows execute in parallel, providing comprehensive validation of agent beha
 - [`docs/JSON_VALIDATION.md`](docs/JSON_VALIDATION.md) - JSON validation details
 - [`docs/EVALUATION_DATA_FORMAT.md`](docs/EVALUATION_DATA_FORMAT.md) - AI eval format
 - [`docs/AGENT_ENHANCEMENTS.md`](docs/AGENT_ENHANCEMENTS.md) - Agent features 
+
+## 🚀 GitHub Actions Workflows
+
+This repository includes comprehensive GitHub Actions workflows for infrastructure deployment, agent creation, and evaluation.
+
+### Available Workflows
+
+1. **📦 Deploy Infrastructure** (`deploy-infrastructure.yml`)
+   - Deploys Azure AI Foundry resources using Bicep
+   - Creates projects, storage, functions, and monitoring
+   - **Outputs permission commands** for agent access
+
+2. **🤖 Deploy Model and Create Agent** (`deploy-model-and-agent.yml`)
+   - Deploys AI models (GPT-4o, GPT-4, etc.)
+   - Creates agents with function calling capabilities
+   - Runs automated evaluations
+   - **Optional**: Triggers blue/green deployment
+
+3. **🧪 AI Agent Evaluation** (`main.yml`)
+   - Runs AI Foundry evaluations (relevance, coherence, etc.)
+   - Executes custom JSON validation tests
+   - Provides detailed test results and metrics
+
+4. **🔄 Blue/Green Deployment with Approval** (`blue-green-deployment-with-approval.yml`)
+   - Human-in-the-loop approval process
+   - Blue/green deployment simulation
+   - Zero-downtime deployment strategy
+
+5. **🚨 Emergency Rollback** (`emergency-rollback.yml`)
+   - Instant rollback to previous version
+   - Incident reporting and notifications
+
+### 🔑 Prerequisites for GitHub Actions
+
+Before using the workflows, ensure you have:
+
+1. **Azure Service Principal** with proper permissions:
+   ```bash
+   az ad sp create-for-rbac \
+     --name "github-actions-aifoundry" \
+     --role Contributor \
+     --scopes /subscriptions/YOUR_SUBSCRIPTION_ID
+   ```
+
+2. **GitHub Repository Secrets**:
+   - `AZURE_CLIENT_ID` - Service principal client ID
+   - `AZURE_TENANT_ID` - Azure tenant ID  
+   - `AZURE_SUBSCRIPTION_ID` - Azure subscription ID
+
+3. **Agent Permissions** (after infrastructure deployment):
+   ```bash
+   # This command is provided in the infrastructure workflow output
+   az role assignment create \
+     --assignee YOUR_GITHUB_ACTIONS_CLIENT_ID \
+     --role "Azure AI Developer" \
+     --scope "/subscriptions/.../providers/Microsoft.CognitiveServices/accounts/YOUR_AI_FOUNDRY"
+   ```
+
+### 🎯 Quick Start with GitHub Actions
+
+1. **Deploy Infrastructure**:
+   - Go to Actions → Deploy Infrastructure
+   - Choose environment (dev/test/prod)
+   - Run workflow and **copy the permission command** from the output
+
+2. **Assign Agent Permissions**:
+   - Run the permission command provided in step 1
+   - This enables agent creation and management
+
+3. **Deploy and Evaluate Agent**:
+   - Go to Actions → Deploy Model and Create Agent
+   - Choose your model and configuration
+   - Enable evaluation and optionally blue/green deployment
+
+4. **Monitor Results**:
+   - View evaluation results in workflow summaries
+   - Download detailed reports from artifacts
+   - Use emergency rollback if needed
+
+📖 **Full Workflow Documentation**: See [`.github/workflows/README.md`](.github/workflows/README.md)
