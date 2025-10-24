@@ -585,6 +585,7 @@ jobs:
       - name: Setup Knowledge Base
         env:
           AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          AZURE_RESOURCE_GROUP_NAME: ${{ inputs.resource_group_name }}
           DEPLOYMENT_OUTPUTS_FILE: deployment-outputs.json
         run: |
           echo "📚 Setting up Azure AI Search knowledge base..."

@@ -40,6 +40,7 @@ def setup_environment_from_deployment(deployment_outputs: Dict[str, Any]) -> Non
     os.environ['AZURE_SEARCH_ENDPOINT'] = f"https://{search_service_name}.search.windows.net"
     os.environ['AZURE_STORAGE_ACCOUNT_NAME'] = storage_account_name
     os.environ['AZURE_RESOURCE_GROUP'] = resource_group
+    os.environ['AZURE_RESOURCE_GROUP_NAME'] = resource_group  # For compatibility with integrated vectorization script
     os.environ['AZURE_OPENAI_ENDPOINT'] = f"https://{ai_foundry_name}.cognitiveservices.azure.com/"
     os.environ['AZURE_OPENAI_EMBEDDING_DEPLOYMENT'] = "text-embedding-3-small"
     os.environ['AZURE_OPENAI_EMBEDDING_MODEL'] = "text-embedding-3-small"
