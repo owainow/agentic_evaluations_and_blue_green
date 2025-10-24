@@ -10,6 +10,8 @@ import json
 import requests
 import time
 from azure.ai.projects import AIProjectClient
+from azure.ai.agents.models import AzureAISearchTool, AzureAISearchQueryType
+from azure.ai.projects.models import ConnectionType
 from azure.identity import DefaultAzureCredential
 
 
@@ -261,44 +263,83 @@ def create_agent(
         print("Setting up Azure Function tool definitions...")
         function_tools_definitions = create_function_tool_definition()
         
-        # Note: For evaluation, we only need the tool definitions
-        # The actual function implementations are handled by Azure Functions
+        # Set up Azure AI Search knowledge tool
+        search_index_name = os.getenv('AZURE_AI_SEARCH_INDEX_NAME', 'knowledge-simple-index')
+        print(f"Setting up Azure AI Search knowledge tool for index: {search_index_name}")
         
-        # Enhanced instructions that work with function calling
+        try:
+            # Get the default Azure AI Search connection
+            azure_ai_search_connection = project_client.connections.get_default(ConnectionType.AZURE_AI_SEARCH)
+            print(f"✓ Found Azure AI Search connection: {azure_ai_search_connection.id}")
+            
+            # Configure the Azure AI Search tool for knowledge grounding
+            ai_search_tool = AzureAISearchTool(
+                index_connection_id=azure_ai_search_connection.id,
+                index_name=search_index_name,
+                query_type=AzureAISearchQueryType.SIMPLE,  # Use SIMPLE to match our simple indexer
+                top_k=10,  # Retrieve comprehensive results for better grounding
+                filter="",  # No filter - search all documents
+            )
+            
+            # Combine function tools with knowledge tool
+            all_tools = function_tools_definitions + ai_search_tool.definitions
+            tool_resources = ai_search_tool.resources
+            print(f"✓ Added Azure AI Search tool ({search_index_name}) to agent")
+            
+        except Exception as search_error:
+            print(f"⚠️  Warning: Could not set up Azure AI Search tool: {search_error}")
+            print("   Agent will be created with Azure Functions only")
+            all_tools = function_tools_definitions
+            tool_resources = None
+        
+        # Enhanced instructions that work with function calling AND knowledge grounding
         enhanced_instructions = f"""{agent_instructions}
 
 CRITICAL RULES - You MUST follow these without exception:
 
-1. FUNCTION CALLING:
+1. KNOWLEDGE BASE ACCESS:
+   - You have access to a comprehensive knowledge base through Azure AI Search
+   - ALWAYS search your knowledge base FIRST for relevant background information
+   - Use knowledge base results to provide context and depth to your responses
+   - The knowledge base contains weather data, news articles, and related information
+
+2. FUNCTION CALLING:
    - You have access to two functions: get_weather and get_news_articles
-   - ALWAYS use the appropriate function when users ask about weather or news
+   - Use these functions for REAL-TIME data when users ask about current conditions
    - Wait for function results before responding to the user
 
-2. WEATHER QUERIES:
-   - Use the get_weather function for any weather-related questions
-   - Pass the location parameter from the user's query
-   - Include unit preference if specified by the user
-   - Present the weather information in a user-friendly format
+3. RESPONSE STRATEGY:
+   - SEARCH KNOWLEDGE BASE first for background/historical information
+   - CALL FUNCTIONS for real-time/current data when needed
+   - COMBINE both sources for comprehensive, well-grounded responses
 
-3. NEWS QUERIES:
-   - Use the get_news_articles function for any news-related questions
-   - Pass the topic parameter from the user's query
-   - Include max_articles if the user specifies how many they want
-   - Present the news articles in a clear, readable format
+4. WEATHER QUERIES:
+   - Search knowledge base for weather patterns, historical data, and context
+   - Use get_weather function for current weather conditions
+   - Combine both for comprehensive weather information
+   - Present information in a user-friendly format
 
-4. RESPONSE FORMAT:
-   - Always wait for function execution to complete
-   - Present function results in a user-friendly way
+5. NEWS QUERIES:
+   - Search knowledge base for related background information and context
+   - Use get_news_articles function for current news articles
+   - Combine both for well-rounded news responses
+   - Present articles in a clear, readable format
+
+6. RESPONSE FORMAT:
+   - Always wait for both knowledge search and function execution to complete
+   - Present results in a user-friendly way that combines knowledge and real-time data
+   - Cite your knowledge base when using indexed information
    - Don't return raw JSON unless specifically requested
 
-5. ERROR HANDLING:
-   - If a function call fails, inform the user that the service is temporarily unavailable
-   - Do NOT make up data if the function returns an error
+7. ERROR HANDLING:
+   - If function calls fail, use knowledge base information when available
+   - If knowledge search fails, rely on function calls for real-time data
    - Be helpful and suggest alternatives when possible
 
-6. OUT OF SCOPE:
-   - For non-weather and non-news queries, politely explain your capabilities
-   - Stay focused on weather and news information only
+8. GROUNDING AND ACCURACY:
+   - Base responses on both knowledge base and function data
+   - Be transparent about information sources (knowledge base vs. real-time)
+   - Only provide information that can be supported by your sources
 """
         
         # Create the agent with function tools (with retry for deployment availability)
@@ -311,13 +352,20 @@ CRITICAL RULES - You MUST follow these without exception:
         
         for attempt in range(max_retries + 1):
             try:
-                agent = project_client.agents.create_agent(
-                    model=model_deployment_name,
-                    name=agent_name,
-                    instructions=enhanced_instructions,
-                    tools=function_tools_definitions,
-                    description=agent_description or f"Weather and news agent using {model_deployment_name} with Azure Functions"
-                )
+                # Create agent with both Azure Functions and Azure AI Search tools
+                create_params = {
+                    "model": model_deployment_name,
+                    "name": agent_name,
+                    "instructions": enhanced_instructions,
+                    "tools": all_tools,
+                    "description": agent_description or f"Weather and news agent using {model_deployment_name} with Azure Functions and knowledge base"
+                }
+                
+                # Add tool resources if we have Azure AI Search
+                if tool_resources:
+                    create_params["tool_resources"] = tool_resources
+                
+                agent = project_client.agents.create_agent(**create_params)
                 break
             except Exception as e:
                 error_str = str(e).lower()
@@ -334,14 +382,23 @@ CRITICAL RULES - You MUST follow these without exception:
         
         # Note: Function calling is configured via the agent's tools parameter during creation
         # The evaluation action will call the agent normally and functions should work automatically
-        print(f"✓ Agent created with {len(function_tools_definitions)} function tools integrated")
+        total_tools = len(all_tools)
+        function_tools_count = len(function_tools_definitions)
+        knowledge_tools_count = total_tools - function_tools_count
+        
+        print(f"✓ Agent created with {total_tools} tools integrated:")
+        print(f"  - {function_tools_count} Azure Function tools")
+        if knowledge_tools_count > 0:
+            print(f"  - {knowledge_tools_count} Azure AI Search knowledge tool")
         
         print(f"✓ Agent created successfully!")
         print(f"  Agent ID: {agent.id}")
         print(f"  Agent Name: {agent.name}")
         print(f"  Model: {agent.model}")
-        print(f"  Tools: {len(function_tools_definitions)} Azure Function(s) enabled")
-        print(f"  Function calling enabled via agent tools integration")
+        print(f"  Azure Functions: {function_tools_count} enabled")
+        if knowledge_tools_count > 0:
+            print(f"  Knowledge Base: {search_index_name} (Azure AI Search)")
+        print(f"  Function calling and knowledge grounding enabled")
         
         # Return agent details
         return {
@@ -351,9 +408,13 @@ CRITICAL RULES - You MUST follow these without exception:
             "instructions": agent.instructions,
             "description": agent.description,
             "function_app_url": function_app_url,
+            "knowledge_index": search_index_name if knowledge_tools_count > 0 else None,
             "created_at": str(agent.created_at) if hasattr(agent, 'created_at') else None,
-            "tools_count": len(function_tools_definitions),
-            "auto_function_calls_enabled": True
+            "tools_count": total_tools,
+            "function_tools_count": function_tools_count,
+            "knowledge_tools_count": knowledge_tools_count,
+            "auto_function_calls_enabled": True,
+            "knowledge_grounding_enabled": knowledge_tools_count > 0
         }
         
     except Exception as e:
@@ -562,9 +623,9 @@ def main():
     model_deployment_name = os.getenv('MODEL_DEPLOYMENT_NAME', 'gpt-4o-deployment')
     function_app_url = os.getenv('FUNCTION_APP_URL')  # Required for Azure Functions
     agent_name = os.getenv('AGENT_NAME', 'WeatherNewsAgent-AzureFunctions')
-    agent_instructions = os.getenv('AGENT_INSTRUCTIONS', """You are a specialized weather and news information agent. 
-Your primary function is to provide accurate weather information and current news articles using Azure Functions.
-You should be helpful and present information in a user-friendly way.""")
+    agent_instructions = os.getenv('AGENT_INSTRUCTIONS', """You are a specialized weather and news information agent with knowledge base access. 
+Your primary function is to provide accurate weather information and current news articles using both Azure Functions for real-time data and your knowledge base for background information.
+You should be helpful and present comprehensive, well-grounded information by combining multiple sources.""")
     
     if not project_endpoint:
         print("Error: PROJECT_ENDPOINT environment variable is required")
@@ -577,10 +638,12 @@ You should be helpful and present information in a user-friendly way.""")
         sys.exit(1)
     
     try:
-        print("=== Azure AI Foundry Agent Creation with Azure Functions ===")
+        print("=== Azure AI Foundry Agent Creation with Azure Functions and Knowledge Base ===")
         print(f"Project: {project_endpoint}")
         print(f"Model: {model_deployment_name}")
         print(f"Function App: {function_app_url}")
+        search_index = os.getenv('AZURE_AI_SEARCH_INDEX_NAME', 'knowledge-simple-index')
+        print(f"Knowledge Base: {search_index} (Azure AI Search)")
         print()
         
         # Create the agent
@@ -603,7 +666,7 @@ You should be helpful and present information in a user-friendly way.""")
             project_client=project_client,
             agent_id=agent_details["id"],
             function_app_url=function_app_url,
-            test_query="What's the weather in London?"
+            test_query="What's the weather in London? Also search your knowledge base for any weather information."
         )
         
         # Save agent details to file

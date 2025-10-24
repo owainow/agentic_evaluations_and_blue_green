@@ -1,7 +1,7 @@
-name: Deploy Model and Create Agent with Azure Functions Tools
+name: Deploy Model and Create Agent with Azure Functions Tools and Knowledge Base
 
 # Prerequisites:
-# 1. Infrastructure must be deployed first (Function App with tools)
+# 1. Infrastructure must be deployed first (Function App with tools + Azure AI Search with knowledge base)
 # 2. Service principal with Contributor role (for resource deployment)
 # 3. Service principal with "Azure AI Developer" role (for agent creation)
 # See docs/GITHUB_ACTIONS_SETUP.md for complete setup instructions
@@ -292,10 +292,12 @@ jobs:
           AGENT_NAME: ${{ inputs.agent_name }}
           AGENT_INSTRUCTIONS: ${{ inputs.agent_instructions }}
           FUNCTION_APP_URL: ${{ steps.function_app.outputs.function_app_url }}
+          AZURE_AI_SEARCH_INDEX_NAME: 'knowledge-simple-index'
         run: |
-          echo "Creating agent with Azure Functions tools..."
+          echo "Creating agent with Azure Functions tools and knowledge base..."
           echo "Model deployment: ${MODEL_DEPLOYMENT_NAME}"
           echo "Function App URL: ${FUNCTION_APP_URL}"
+          echo "Knowledge Base Index: ${AZURE_AI_SEARCH_INDEX_NAME}"
           python scripts/create_agent_azure_functions.py
       
       - name: Agent Creation Status
@@ -364,6 +366,14 @@ jobs:
           | **Function App URL** | ${{ steps.function_app.outputs.function_app_url }} |
           | **Weather Function** | ${{ steps.function_app.outputs.function_app_url }}/api/get_weather |
           | **News Function** | ${{ steps.function_app.outputs.function_app_url }}/api/get_news_articles |
+          
+          ## Knowledge Base
+          
+          | Property | Value |
+          |----------|-------|
+          | **Search Index** | knowledge-simple-index |
+          | **Search Service** | Connected via Azure AI Search |
+          | **Knowledge Documents** | 28 indexed documents |
           | **Portal** | [View in Azure AI Foundry Studio](https://ai.azure.com) |
           EOF
           else
