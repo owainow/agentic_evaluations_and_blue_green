@@ -73,19 +73,19 @@ on:
           - gpt-4-turbo
           - gpt-35-turbo
           - gpt-35-turbo-16k
-        default: 'gpt-4'
+        default: 'gpt-4.1'
       
       model_version_2:
         description: 'Second model version'
         required: false
         type: string
-        default: 'turbo-2024-04-09'
+        default: '2025-04-14'
       
       agent_name_2:
         description: 'Name for the second agent'
         required: false
         type: string
-        default: 'test-agent-gpt4'
+        default: 'test-agent-gpt4.1'
 
 permissions:
   id-token: write
