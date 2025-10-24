@@ -20,6 +20,9 @@ param environment string = 'dev'
 @description('Custom name for the Function App (optional)')
 param functionAppName string = ''
 
+@description('Whether to create role assignments (set to false if they already exist)')
+param createRoleAssignments bool = true
+
 @description('Tags to apply to all resources')
 param tags object = {
   Environment: environment
@@ -324,7 +327,7 @@ var searchIndexDataContributorRoleId = '8ebe5a00-799e-43f5-93ac-243d3dce84a7'
 var searchIndexDataReaderRoleId = '1407120a-92aa-4202-b7e9-c0e197c71c8f'
 
 // User-assigned identity needs Storage Blob Data Owner
-resource roleAssignmentBlobDataOwner 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+resource roleAssignmentBlobDataOwner 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (createRoleAssignments) {
   name: guid(subscription().id, storageAccount.id, userAssignedIdentity.id, 'Storage Blob Data Owner')
   scope: storageAccount
   properties: {
@@ -336,7 +339,7 @@ resource roleAssignmentBlobDataOwner 'Microsoft.Authorization/roleAssignments@20
 }
 
 // User-assigned identity needs Storage Blob Data Contributor  
-resource roleAssignmentBlob 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+resource roleAssignmentBlob 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (createRoleAssignments) {
   name: guid(subscription().id, storageAccount.id, userAssignedIdentity.id, 'Storage Blob Data Contributor')
   scope: storageAccount
   properties: {
@@ -348,7 +351,7 @@ resource roleAssignmentBlob 'Microsoft.Authorization/roleAssignments@2022-04-01'
 }
 
 // User-assigned identity needs Storage Queue Data Contributor
-resource roleAssignmentQueueStorage 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+resource roleAssignmentQueueStorage 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (createRoleAssignments) {
   name: guid(subscription().id, storageAccount.id, userAssignedIdentity.id, 'Storage Queue Data Contributor')
   scope: storageAccount
   properties: {
@@ -360,7 +363,7 @@ resource roleAssignmentQueueStorage 'Microsoft.Authorization/roleAssignments@202
 }
 
 // User-assigned identity needs Storage Table Data Contributor
-resource roleAssignmentTableStorage 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+resource roleAssignmentTableStorage 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (createRoleAssignments) {
   name: guid(subscription().id, storageAccount.id, userAssignedIdentity.id, 'Storage Table Data Contributor')
   scope: storageAccount
   properties: {
@@ -372,7 +375,7 @@ resource roleAssignmentTableStorage 'Microsoft.Authorization/roleAssignments@202
 }
 
 // User-assigned identity needs Monitoring Metrics Publisher for Application Insights
-resource roleAssignmentAppInsights 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+resource roleAssignmentAppInsights 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (createRoleAssignments) {
   name: guid(subscription().id, applicationInsights.id, userAssignedIdentity.id, 'Monitoring Metrics Publisher')
   scope: applicationInsights
   properties: {
@@ -384,7 +387,7 @@ resource roleAssignmentAppInsights 'Microsoft.Authorization/roleAssignments@2022
 }
 
 // Role assignment for Azure AI Foundry Agent Creator (custom role)
-resource roleAssignmentAIFoundryAgentCreator 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+resource roleAssignmentAIFoundryAgentCreator 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (createRoleAssignments) {
   name: guid(subscription().id, aiFoundry.id, userAssignedIdentity.id, azureAIFoundryAgentCreatorRoleId)
   scope: aiFoundry
   properties: {
@@ -396,7 +399,7 @@ resource roleAssignmentAIFoundryAgentCreator 'Microsoft.Authorization/roleAssign
 }
 
 // Role assignments for Azure AI Search service
-resource roleAssignmentSearchServiceContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+resource roleAssignmentSearchServiceContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (createRoleAssignments) {
   name: guid(subscription().id, searchService.id, userAssignedIdentity.id, searchServiceContributorRoleId)
   scope: searchService
   properties: {
@@ -407,7 +410,7 @@ resource roleAssignmentSearchServiceContributor 'Microsoft.Authorization/roleAss
   }
 }
 
-resource roleAssignmentSearchIndexDataContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+resource roleAssignmentSearchIndexDataContributor 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (createRoleAssignments) {
   name: guid(subscription().id, searchService.id, userAssignedIdentity.id, searchIndexDataContributorRoleId)
   scope: searchService
   properties: {
@@ -419,7 +422,7 @@ resource roleAssignmentSearchIndexDataContributor 'Microsoft.Authorization/roleA
 }
 
 // Role assignment for AI Foundry project's system-assigned identity to access search
-resource roleAssignmentAIProjectSearchReader 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+resource roleAssignmentAIProjectSearchReader 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (createRoleAssignments) {
   name: guid(subscription().id, searchService.id, aiProject.id, searchIndexDataReaderRoleId)
   scope: searchService
   properties: {
@@ -431,7 +434,7 @@ resource roleAssignmentAIProjectSearchReader 'Microsoft.Authorization/roleAssign
 }
 
 // Role assignment for Azure AI Search service's system-assigned identity to access storage
-resource roleAssignmentSearchServiceStorageReader 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+resource roleAssignmentSearchServiceStorageReader 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (createRoleAssignments) {
   name: guid(subscription().id, storageAccount.id, searchService.id, 'SearchServiceStorageReader')
   scope: storageAccount
   properties: {
