@@ -484,7 +484,7 @@ jobs:
       project_endpoint: ${{ needs.deploy-model-and-agent.outputs.project_endpoint }}
       deployment_name: ${{ needs.deploy-model-and-agent.outputs.deployment_name }}
       agent_id: ${{ needs.deploy-model-and-agent.outputs.agent_id }}
-      evaluation_results: "Combined evaluation completed on ${{ github.run_id }}. Agent: ${{ needs.deploy-model-and-agent.outputs.agent_id }}. Model: ${{ needs.deploy-model-and-agent.outputs.deployment_name }}. Check job artifacts for detailed results."
+      evaluation_results: "Combined evaluation completed on ${{ github.run_id }}. Agent: ${{ needs.deploy-model-and-agent.outputs.agent_id }}. Model: ${{ needs.deploy-model-and-agent.outputs.deployment_name }}. Check job summaries for detailed results."
       evaluation_passed: ${{ needs.run-combined-evaluation.result == 'success' }}
     secrets:
       AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
