@@ -13,7 +13,7 @@ from datetime import datetime
 
 # Azure libraries
 from azure.identity import DefaultAzureCredential
-from azure.search.documents.indexes import SearchIndexClient
+from azure.search.documents.indexes import SearchIndexClient, SearchIndexerClient
 from azure.search.documents.indexes.models import (
     SearchIndex,
     SearchField,
@@ -50,9 +50,10 @@ class IntegratedVectorizationIndexer:
         # Configuration from environment variables
         self.search_endpoint = os.getenv("AZURE_SEARCH_ENDPOINT")
         self.search_service_name = self._extract_service_name(self.search_endpoint)
-        self.storage_connection_string = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
+        self.storage_account_name = os.getenv("AZURE_STORAGE_ACCOUNT_NAME")
+        self.storage_connection_string = os.getenv("AZURE_STORAGE_CONNECTION_STRING")  # Optional
         self.aoai_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
-        self.aoai_deployment_name = os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT")
+        self.aoai_deployment_name = os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT", "text-embedding-3-small")
         self.aoai_model_name = os.getenv("AZURE_OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
         
         # Initialize clients
@@ -61,9 +62,36 @@ class IntegratedVectorizationIndexer:
             credential=self.credential
         )
         
-        self.blob_service_client = BlobServiceClient.from_connection_string(
-            self.storage_connection_string
+        self.search_indexer_client = SearchIndexerClient(
+            endpoint=self.search_endpoint,
+            credential=self.credential
         )
+        
+        # Use identity-based authentication for storage
+        if self.storage_connection_string:
+            try:
+                self.blob_service_client = BlobServiceClient.from_connection_string(
+                    self.storage_connection_string
+                )
+            except Exception:
+                # Fallback to identity-based auth if connection string fails
+                if self.storage_account_name:
+                    account_url = f"https://{self.storage_account_name}.blob.core.windows.net"
+                    self.blob_service_client = BlobServiceClient(
+                        account_url=account_url,
+                        credential=self.credential
+                    )
+                else:
+                    raise ValueError("Neither connection string nor storage account name available")
+        else:
+            # Use identity-based authentication
+            if not self.storage_account_name:
+                raise ValueError("AZURE_STORAGE_ACCOUNT_NAME environment variable is required")
+            account_url = f"https://{self.storage_account_name}.blob.core.windows.net"
+            self.blob_service_client = BlobServiceClient(
+                account_url=account_url,
+                credential=self.credential
+            )
         
         # Container for documents
         self.container_name = "knowledge-documents"
@@ -85,7 +113,7 @@ class IntegratedVectorizationIndexer:
         """Create blob storage container if it doesn't exist."""
         try:
             container_client = self.blob_service_client.get_container_client(self.container_name)
-            await container_client.create_container()
+            container_client.create_container()
             print(f"Created blob container: {self.container_name}")
         except ResourceExistsError:
             print(f"Blob container already exists: {self.container_name}")
@@ -102,7 +130,7 @@ class IntegratedVectorizationIndexer:
                 blob_name = f"weather/{pdf_file.name}"
                 try:
                     with open(pdf_file, "rb") as data:
-                        await container_client.upload_blob(
+                        container_client.upload_blob(
                             name=blob_name,
                             data=data,
                             overwrite=True,
@@ -124,7 +152,7 @@ class IntegratedVectorizationIndexer:
                 blob_name = f"news/{pdf_file.name}"
                 try:
                     with open(pdf_file, "rb") as data:
-                        await container_client.upload_blob(
+                        container_client.upload_blob(
                             name=blob_name,
                             data=data,
                             overwrite=True,
@@ -190,56 +218,48 @@ class IntegratedVectorizationIndexer:
                 type=SearchFieldDataType.String,
                 searchable=True,
                 filterable=True,
-                sortable=True,
-                retrievable=True
+                sortable=True
             ),
             SearchField(
                 name="content",
                 type=SearchFieldDataType.String,
-                searchable=True,
-                retrievable=True
+                searchable=True
             ),
             SearchField(
                 name="chunk_text",
                 type=SearchFieldDataType.String,
-                searchable=True,
-                retrievable=True
+                searchable=True
             ),
             SearchField(
                 name="chunk_vector",
                 type=SearchFieldDataType.Collection(SearchFieldDataType.Single),
                 searchable=True,
-                retrievable=False,
                 stored=True,
-                dimensions=1536,  # text-embedding-3-small dimensions
+                vector_search_dimensions=1536,  # text-embedding-3-small dimensions
                 vector_search_profile_name="vector-profile-hnsw"
             ),
             SearchField(
                 name="category",
                 type=SearchFieldDataType.String,
                 filterable=True,
-                facetable=True,
-                retrievable=True
+                facetable=True
             ),
             SearchField(
                 name="source_type",
                 type=SearchFieldDataType.String,
                 filterable=True,
-                facetable=True,
-                retrievable=True
+                facetable=True
             ),
             SearchField(
                 name="file_path",
                 type=SearchFieldDataType.String,
-                retrievable=True,
                 filterable=True
             ),
             SearchField(
                 name="last_modified",
                 type=SearchFieldDataType.DateTimeOffset,
                 filterable=True,
-                sortable=True,
-                retrievable=True
+                sortable=True
             )
         ]
         
@@ -259,16 +279,29 @@ class IntegratedVectorizationIndexer:
             print(f"Error creating index: {e}")
     
     def create_data_source(self) -> None:
-        """Create a data source connection to blob storage."""
+        """Create a data source connection to blob storage using identity-based authentication."""
+        # Use identity-based authentication instead of connection string
+        storage_account_name = os.getenv("AZURE_STORAGE_ACCOUNT_NAME")
+        resource_group_name = os.getenv("AZURE_RESOURCE_GROUP_NAME")
+        subscription_id = "269eee56-58bc-45eb-9dca-4d22421c45fa"  # Your subscription ID
+        
+        if not storage_account_name:
+            raise ValueError("AZURE_STORAGE_ACCOUNT_NAME environment variable is required")
+        if not resource_group_name:
+            raise ValueError("AZURE_RESOURCE_GROUP_NAME environment variable is required")
+        
+        # Use ResourceId format for identity-based authentication
+        resource_id = f"/subscriptions/{subscription_id}/resourceGroups/{resource_group_name}/providers/Microsoft.Storage/storageAccounts/{storage_account_name}"
+        
         data_source = SearchIndexerDataSourceConnection(
             name=self.data_source_name,
             type="azureblob",
-            connection_string=self.storage_connection_string,
+            connection_string=f"ResourceId={resource_id};",
             container=SearchIndexerDataContainer(name=self.container_name)
         )
         
         try:
-            result = self.search_index_client.create_data_source_connection(data_source)
+            result = self.search_indexer_client.create_data_source_connection(data_source)
             print(f"Created data source: {result.name}")
         except ResourceExistsError:
             print(f"Data source already exists: {self.data_source_name}")
@@ -330,7 +363,7 @@ class IntegratedVectorizationIndexer:
         )
         
         try:
-            result = self.search_index_client.create_skillset(skillset)
+            result = self.search_indexer_client.create_skillset(skillset)
             print(f"Created skillset: {result.name}")
         except ResourceExistsError:
             print(f"Skillset already exists: {self.skillset_name}")
@@ -359,27 +392,19 @@ class IntegratedVectorizationIndexer:
             }
         ]
         
-        # Output field mappings from skillset to index
-        output_field_mappings = [
-            {
-                "sourceFieldName": "/document/chunks/*",
-                "targetFieldName": "chunk_text"
-            },
-            {
-                "sourceFieldName": "/document/chunks/*/chunk_vector",
-                "targetFieldName": "chunk_vector"
-            }
-        ]
+        # Output field mappings from skillset to index - REMOVE THIS FOR INDEX PROJECTIONS
+        # output_field_mappings = []
         
-        # Create indexer with schedule
+        # Create indexer with schedule - NO OUTPUT FIELD MAPPINGS
         indexer = SearchIndexer(
             name=self.indexer_name,
+            description="Indexer to process documents and generate embeddings",
             data_source_name=self.data_source_name,
             target_index_name=self.index_name,
             skillset_name=self.skillset_name,
             schedule=IndexingSchedule(interval="PT2H"),  # Run every 2 hours
             field_mappings=field_mappings,
-            output_field_mappings=output_field_mappings,
+            # output_field_mappings=output_field_mappings,  # REMOVE FOR INDEX PROJECTIONS
             parameters={
                 "batchSize": 10,
                 "maxFailedItems": 5,
@@ -393,17 +418,24 @@ class IntegratedVectorizationIndexer:
         )
         
         try:
-            result = self.search_index_client.create_indexer(indexer)
+            result = self.search_indexer_client.create_indexer(indexer)
             print(f"Created indexer: {result.name}")
         except ResourceExistsError:
             print(f"Indexer already exists: {self.indexer_name}")
         except Exception as e:
             print(f"Error creating indexer: {e}")
+            # Print more detailed error information
+            if hasattr(e, 'error') and hasattr(e.error, 'message'):
+                print(f"Detailed error message: {e.error.message}")
+            if hasattr(e, 'response') and hasattr(e.response, 'text'):
+                print(f"Response text: {e.response.text()}")
+            import traceback
+            print(f"Full traceback: {traceback.format_exc()}")
     
     def run_indexer(self) -> None:
         """Run the indexer to process documents."""
         try:
-            self.search_index_client.run_indexer(self.indexer_name)
+            self.search_indexer_client.run_indexer(self.indexer_name)
             print(f"Started indexer run: {self.indexer_name}")
         except Exception as e:
             print(f"Error running indexer: {e}")
@@ -411,7 +443,7 @@ class IntegratedVectorizationIndexer:
     def get_indexer_status(self) -> Dict:
         """Get the status of the indexer."""
         try:
-            status = self.search_index_client.get_indexer_status(self.indexer_name)
+            status = self.search_indexer_client.get_indexer_status(self.indexer_name)
             return {
                 "status": status.status,
                 "last_result": {
@@ -478,7 +510,7 @@ def main():
     # Check environment variables
     required_env_vars = [
         "AZURE_SEARCH_ENDPOINT",
-        "AZURE_STORAGE_CONNECTION_STRING", 
+        "AZURE_STORAGE_ACCOUNT_NAME",  # Changed from connection string to account name
         "AZURE_OPENAI_ENDPOINT",
         "AZURE_OPENAI_EMBEDDING_DEPLOYMENT"
     ]

@@ -39,34 +39,20 @@ def setup_environment_from_deployment(deployment_outputs: Dict[str, Any]) -> Non
     # Set environment variables for our scripts
     os.environ['AZURE_SEARCH_ENDPOINT'] = f"https://{search_service_name}.search.windows.net"
     os.environ['AZURE_STORAGE_ACCOUNT_NAME'] = storage_account_name
+    os.environ['AZURE_RESOURCE_GROUP'] = resource_group
     os.environ['AZURE_OPENAI_ENDPOINT'] = f"https://{ai_foundry_name}.cognitiveservices.azure.com/"
     os.environ['AZURE_OPENAI_EMBEDDING_DEPLOYMENT'] = "text-embedding-3-small"
     os.environ['AZURE_OPENAI_EMBEDDING_MODEL'] = "text-embedding-3-small"
     
-    # Get storage connection string
-    print("🔑 Getting storage connection string...")
-    import subprocess
-    try:
-        result = subprocess.run([
-            'az', 'storage', 'account', 'show-connection-string',
-            '--name', storage_account_name,
-            '--resource-group', resource_group,
-            '--query', 'connectionString',
-            '--output', 'tsv'
-        ], capture_output=True, text=True, check=True)
-        
-        connection_string = result.stdout.strip()
-        os.environ['AZURE_STORAGE_CONNECTION_STRING'] = connection_string
-        print("✅ Storage connection string configured")
-        
-    except subprocess.CalledProcessError as e:
-        print(f"❌ Failed to get storage connection string: {e}")
-        sys.exit(1)
+    # Note: We're not setting AZURE_STORAGE_CONNECTION_STRING since the storage account
+    # uses identity-based authentication only (key-based auth is disabled for security)
+    print("ℹ️ Using identity-based authentication for storage (key-based auth disabled)")
     
     print(f"✅ Environment configured for:")
     print(f"   - Search Service: {search_service_name}")
     print(f"   - Storage Account: {storage_account_name}")
     print(f"   - AI Foundry Service: {ai_foundry_name}")
+    print(f"   - Resource Group: {resource_group}")
 
 def install_required_packages() -> None:
     """Install required Python packages for the knowledge base setup."""
@@ -172,16 +158,16 @@ def create_summary_report(success: bool) -> None:
     
     summary_file = Path("knowledge-base-setup-summary.md")
     
-    with open(summary_file, "w") as f:
-        f.write("# 📚 Knowledge Base Setup Summary\n\n")
+    with open(summary_file, "w", encoding="utf-8") as f:
+        f.write("# Knowledge Base Setup Summary\n\n")
         
         if success:
-            f.write("## ✅ Setup Completed Successfully!\n\n")
+            f.write("## Setup Completed Successfully!\n\n")
             f.write("Your Azure AI Search knowledge base has been configured with:\n\n")
-            f.write("### 📄 Generated Data\n")
+            f.write("### Generated Data\n")
             f.write("- **Weather Data**: Historical weather information for multiple cities\n")
             f.write("- **News Articles**: Climate and weather-related news content\n\n")
-            f.write("### 🔍 Azure AI Search Configuration\n")
+            f.write("### Azure AI Search Configuration\n")
             f.write("- **Index Name**: `knowledge-vector-index`\n")
             f.write("- **Vector Dimensions**: 1536 (text-embedding-3-small)\n")
             f.write("- **Search Capabilities**:\n")
@@ -189,29 +175,29 @@ def create_summary_report(success: bool) -> None:
             f.write("  - Keyword search (traditional text matching)\n")
             f.write("  - Hybrid search (combines both approaches)\n")
             f.write("  - Filtered search (by category, source type, etc.)\n\n")
-            f.write("### 🛠️ Integrated Vectorization Pipeline\n")
+            f.write("### Integrated Vectorization Pipeline\n")
             f.write("- **Data Source**: Blob storage container (`knowledge-documents`)\n")
             f.write("- **Skillset**: Text splitting + Azure OpenAI embedding\n")
             f.write("- **Indexer**: Automated processing every 2 hours\n")
             f.write("- **Document Processing**: Native PDF parsing and chunking\n\n")
-            f.write("## 🚀 Next Steps\n\n")
+            f.write("## Next Steps\n\n")
             f.write("1. **Deploy your language model** using the model deployment workflow\n")
             f.write("2. **Update your agent** to use the knowledge base for RAG\n")
             f.write("3. **Test search capabilities** using the provided test scripts\n")
             f.write("4. **Run evaluations** to measure RAG performance\n\n")
-            f.write("## 🔗 Resources\n\n")
+            f.write("## Resources\n\n")
             f.write("- [Azure AI Search Documentation](https://docs.microsoft.com/en-us/azure/search/)\n")
             f.write("- [Integrated Vectorization Guide](docs/INTEGRATED_VECTORIZATION_GUIDE.md)\n")
             f.write("- [Search Index Portal](https://portal.azure.com/#blade/HubsExtension/BrowseResource/resourceType/Microsoft.Search%2FsearchServices)\n\n")
         else:
-            f.write("## ❌ Setup Failed\n\n")
+            f.write("## Setup Failed\n\n")
             f.write("The knowledge base setup encountered errors. Check the logs above for details.\n\n")
-            f.write("### 🛠️ Troubleshooting\n\n")
+            f.write("### Troubleshooting\n\n")
             f.write("1. **Check Azure permissions**: Ensure the service principal has required roles\n")
             f.write("2. **Verify resource deployment**: Confirm all Azure services are properly deployed\n")
             f.write("3. **Check environment variables**: Ensure all required variables are set\n")
             f.write("4. **Review logs**: Look for specific error messages in the deployment logs\n\n")
-            f.write("### 🔧 Manual Setup\n\n")
+            f.write("### Manual Setup\n\n")
             f.write("If automated setup failed, you can run the scripts manually:\n\n")
             f.write("```bash\n")
             f.write("# Generate data\n")
@@ -221,7 +207,7 @@ def create_summary_report(success: bool) -> None:
             f.write("python scripts/index_documents_integrated.py\n")
             f.write("```\n\n")
     
-    print(f"📄 Summary report created: {summary_file}")
+    print(f"Summary report created: {summary_file}")
 
 async def main():
     """Main function to set up the knowledge base after infrastructure deployment."""

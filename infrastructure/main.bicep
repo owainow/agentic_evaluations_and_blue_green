@@ -316,6 +316,7 @@ resource applicationInsights 'Microsoft.Insights/components@2020-02-02' = {
 // Define role IDs as variables for clarity
 var storageBlobDataOwnerRoleId = 'b7e6dc6d-f1e8-4753-8033-0f276bb0955b'
 var storageBlobDataContributorRoleId = 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'
+var storageBlobDataReaderRoleId = '2a2b9908-6ea1-4ae2-8e65-a410df84e7d1'
 var storageQueueDataContributorRoleId = '974c5e8b-45b9-4653-ba55-5f855dd0fb88'
 var storageTableDataContributorRoleId = '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3'
 var monitoringMetricsPublisherRoleId = '3913510d-42f4-4e42-8a64-420c390055eb'
@@ -429,6 +430,18 @@ resource roleAssignmentAIProjectSearchReader 'Microsoft.Authorization/roleAssign
     principalId: aiProject.identity.principalId
     principalType: 'ServicePrincipal'
     description: 'Grants AI Foundry project read access to search indexes for agent queries'
+  }
+}
+
+// Role assignment for Azure AI Search service's system-assigned identity to access storage
+resource roleAssignmentSearchServiceStorageReader 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid(subscription().id, storageAccount.id, searchService.id, storageBlobDataReaderRoleId)
+  scope: storageAccount
+  properties: {
+    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', storageBlobDataReaderRoleId)
+    principalId: searchService.identity.principalId
+    principalType: 'ServicePrincipal'
+    description: 'Grants Azure AI Search service read access to storage blobs for indexing operations'
   }
 }
 
