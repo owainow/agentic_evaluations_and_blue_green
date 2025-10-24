@@ -71,6 +71,43 @@ on:
         type: string
         default: 'You are an agent that provides responses in JSON only. You are to follow a standard JSON request format with a "response" field containing the answer. For weather queries you must always reply with a strucutred JSON response of: field: location field: temperature field: temperature_unit field: condition field: humidity_percent field: wind_speed_kmh field: timestamp. For news queries you must always reply with field: timestamp field: articles field: article_count field: topic '
       
+      # Second model/agent for comparison
+      create_comparison_agent:
+        description: 'Create a second agent for comparison evaluation'
+        required: false
+        type: boolean
+        default: false
+      
+      model_name_2:
+        description: 'Second model to deploy for comparison'
+        required: false
+        type: choice
+        options:
+          - gpt-4o
+          - gpt-4o-mini
+          - gpt-4
+          - gpt-4-turbo
+          - gpt-35-turbo
+          - gpt-35-turbo-16k
+        default: 'gpt-4'
+      
+      model_version_2:
+        description: 'Second model version'
+        required: false
+        type: string
+        default: '2024-04-09'
+      
+      deployment_name_2:
+        description: 'Name for the second model deployment (leave empty to auto-generate)'
+        required: false
+        type: string
+      
+      agent_name_2:
+        description: 'Name for the second agent'
+        required: false
+        type: string
+        default: 'test-agent-gpt4'
+      
       run_blue_green:
         description: 'Run blue/green deployment with human approval after evaluation'
         required: false
@@ -115,6 +152,21 @@ jobs:
           fi
           echo "deployment_name=${DEPLOYMENT_NAME}" >> $GITHUB_OUTPUT
           echo "Generated deployment name: ${DEPLOYMENT_NAME}"
+      
+      - name: Generate second deployment name
+        id: deployment_name_2
+        if: ${{ inputs.create_comparison_agent == true }}
+        shell: bash
+        run: |
+          if [ -n "${{ inputs.deployment_name_2 }}" ]; then
+            DEPLOYMENT_NAME_2="${{ inputs.deployment_name_2 }}"
+          else
+            # Auto-generate deployment name: model-environment-timestamp
+            TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+            DEPLOYMENT_NAME_2="${{ inputs.model_name_2 }}-${{ inputs.environment }}-${TIMESTAMP}"
+          fi
+          echo "deployment_name_2=${DEPLOYMENT_NAME_2}" >> $GITHUB_OUTPUT
+          echo "Generated second deployment name: ${DEPLOYMENT_NAME_2}"
       
       - name: Get AI Services name
         id: ai_services
@@ -467,7 +519,7 @@ jobs:
       azure_endpoint: ${{ needs.deploy-model-and-agent.outputs.azure_openai_endpoint }}
       api_version: '2024-10-21'
       agent_data_file: 'weather_test.json'
-      genai_data_file: 'genai_evaluation_test.json'
+      genai_data_file: 'genai_evaluation_test.jsonl'
     secrets:
       AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
       AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
