@@ -20,9 +20,6 @@ param environment string = 'dev'
 @description('Custom name for the Function App (optional)')
 param functionAppName string = ''
 
-@description('GitHub Actions Service Principal Object ID for role assignments (optional)')
-param githubActionsServicePrincipalId string = ''
-
 @description('Tags to apply to all resources')
 param tags object = {
   Environment: environment
@@ -435,7 +432,7 @@ resource roleAssignmentAIProjectSearchReader 'Microsoft.Authorization/roleAssign
 
 // Role assignment for Azure AI Search service's system-assigned identity to access storage
 resource roleAssignmentSearchServiceStorageReader 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(subscription().id, storageAccount.id, searchService.id, storageBlobDataReaderRoleId)
+  name: guid(subscription().id, storageAccount.id, searchService.id, 'SearchServiceStorageReader')
   scope: storageAccount
   properties: {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', storageBlobDataReaderRoleId)
