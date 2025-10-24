@@ -6,7 +6,7 @@
     "GroundednessEvaluator",
     "ToolCallAccuracyEvaluator",
     "ViolenceEvaluator",
-    "RetrievalEvaluator"
+    "FluencyEvaluator"
   ],
   "data": [
     {
